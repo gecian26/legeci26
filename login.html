@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Institutional Login — GECIAN Alumni Network</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/styles.css">
+  <link rel="stylesheet" href="css/portal.css">
+</head>
+<body class="login-page">
+  <div class="login-card">
+    <div class="login-card__header">
+      <img src="assets/geci-logo.png" alt="GECI" class="login-card__logo">
+      <h1 class="login-card__title">Institutional Access</h1>
+      <p class="login-card__subtitle">Admin & coordinator login for GECIAN Alumni Network</p>
+    </div>
+
+    <div class="login-error" id="loginError"></div>
+
+    <form id="loginForm" novalidate>
+      <div class="form-group">
+        <label for="username">Username</label>
+        <input type="text" id="username" name="username" placeholder="Enter your username" required autocomplete="username">
+      </div>
+      <div class="form-group">
+        <label for="password">Password</label>
+        <input type="password" id="password" name="password" placeholder="Enter your password" required autocomplete="current-password">
+      </div>
+      <button type="submit" class="btn btn--primary btn--full" id="loginBtn">
+        <span class="btn__text">Sign In</span>
+        <span class="btn__loader" hidden></span>
+      </button>
+    </form>
+
+    <a href="index.html" class="login-card__back">← Back to public site</a>
+  </div>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <script type="module" src="js/login.js"></script>
+</body>
+</html>

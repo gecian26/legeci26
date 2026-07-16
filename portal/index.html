@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Coordinator Portal — GECIAN Alumni Network</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="../css/styles.css">
+  <link rel="stylesheet" href="../css/portal.css">
+</head>
+<body class="portal-body">
+  <div class="portal-layout">
+    <aside class="portal-sidebar" id="sidebar">
+      <div class="portal-sidebar__brand">
+        <img src="../assets/geci-logo.png" alt="GECI" class="portal-sidebar__logo">
+        <div>
+          <div class="portal-sidebar__title">GECIAN Alumni</div>
+          <div class="portal-sidebar__role" id="sidebarRole">Coordinator</div>
+        </div>
+      </div>
+      <ul class="portal-nav">
+        <li><button class="portal-nav__link portal-nav__link--active" data-panel="dashboard">Dashboard</button></li>
+        <li><button class="portal-nav__link" data-panel="account">Account</button></li>
+      </ul>
+      <div class="portal-sidebar__footer">
+        <button class="portal-nav__link" id="logoutBtn">Sign Out</button>
+        <a href="../index.html" class="portal-nav__link" style="display:block;margin-top:0.5rem;">Public Site</a>
+      </div>
+    </aside>
+
+    <main class="portal-main">
+      <div class="portal-header">
+        <div>
+          <button class="portal-mobile-toggle" id="mobileToggle">☰ Menu</button>
+          <h1 id="pageTitle">Coordinator Dashboard</h1>
+        </div>
+        <span id="userName" style="color:var(--slate-500);font-size:0.9rem;"></span>
+      </div>
+
+      <div id="passwordPrompt" class="password-prompt-wrap" hidden></div>
+
+      <section class="portal-panel portal-panel--active" id="panel-dashboard">
+        <div class="portal-card">
+          <h2 class="portal-card__title">Welcome, <span id="welcomeName"></span></h2>
+          <p style="color:var(--slate-500);margin-bottom:1rem;">
+            You are signed in as <strong id="roleLabel"></strong><span id="deptLabel"></span>.
+          </p>
+          <p style="color:var(--slate-500);line-height:1.7;">
+            Coordinator-specific features will be configured in the next phase. For now, you can view the programme schedule below.
+          </p>
+        </div>
+
+        <div class="portal-card">
+          <h2 class="portal-card__title">Mega Alumni Meetup</h2>
+          <div id="meetupInfo"><p class="empty-state">Loading...</p></div>
+        </div>
+
+        <div class="portal-card">
+          <h2 class="portal-card__title">Pre-Events Programme</h2>
+          <div id="eventsInfo"><p class="empty-state">Loading...</p></div>
+        </div>
+      </section>
+
+      <section class="portal-panel" id="panel-account">
+        <div id="accountPasswordCard"></div>
+      </section>
+    </main>
+  </div>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <script type="module" src="../js/portal.js"></script>
+</body>
+</html>

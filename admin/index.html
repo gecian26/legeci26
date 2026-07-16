@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Admin Portal — GECIAN Alumni Network</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="../css/styles.css">
+  <link rel="stylesheet" href="../css/portal.css">
+</head>
+<body class="portal-body">
+  <div class="portal-layout">
+    <aside class="portal-sidebar" id="sidebar">
+      <div class="portal-sidebar__brand">
+        <img src="../assets/geci-logo.png" alt="GECI" class="portal-sidebar__logo">
+        <div>
+          <div class="portal-sidebar__title">GECIAN Alumni</div>
+          <div class="portal-sidebar__role" id="sidebarRole">Administrator</div>
+        </div>
+      </div>
+      <ul class="portal-nav">
+        <li><button class="portal-nav__link portal-nav__link--active" data-panel="meetup">Mega Meetup</button></li>
+        <li><button class="portal-nav__link" data-panel="events">Pre-Events</button></li>
+        <li><button class="portal-nav__link" data-panel="users">Coordinators</button></li>
+        <li><button class="portal-nav__link" data-panel="account">Account</button></li>
+      </ul>
+      <div class="portal-sidebar__footer">
+        <button class="portal-nav__link" id="logoutBtn">Sign Out</button>
+        <a href="../index.html" class="portal-nav__link" style="display:block;margin-top:0.5rem;">Public Site</a>
+      </div>
+    </aside>
+
+    <main class="portal-main">
+      <div class="portal-header">
+        <div>
+          <button class="portal-mobile-toggle" id="mobileToggle">☰ Menu</button>
+          <h1 id="pageTitle">Mega Meetup</h1>
+        </div>
+        <span id="adminName" style="color:var(--slate-500);font-size:0.9rem;"></span>
+      </div>
+
+      <div id="passwordPrompt" class="password-prompt-wrap" hidden></div>
+
+      <!-- Meetup Panel -->
+      <section class="portal-panel portal-panel--active" id="panel-meetup">
+        <div class="portal-card">
+          <h2 class="portal-card__title">Mega Alumni Meetup Configuration</h2>
+          <p class="form-hint" style="margin-bottom:1.25rem;">Configure the main meetup details shown on the public homepage.</p>
+          <form id="meetupForm">
+            <div class="form-group">
+              <label for="meetupTitle">Event Title</label>
+              <input type="text" id="meetupTitle" required placeholder="Mega Alumni Meetup 2026">
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label for="meetupDate">Date</label>
+                <input type="date" id="meetupDate" required>
+              </div>
+              <div class="form-group">
+                <label for="meetupVenue">Venue</label>
+                <input type="text" id="meetupVenue" placeholder="Government Engineering College Idukki">
+              </div>
+            </div>
+            <div class="form-group">
+              <label for="meetupDesc">Description</label>
+              <textarea id="meetupDesc" rows="4" style="width:100%;padding:0.75rem 1rem;font-family:var(--font-body);font-size:0.95rem;border:1.5px solid transparent;border-radius:10px;background:var(--slate-100);resize:vertical;" placeholder="Describe the mega meetup..."></textarea>
+            </div>
+            <label class="checkbox-label">
+              <input type="checkbox" id="meetupPublished" checked>
+              Publish on public site
+            </label>
+            <div style="margin-top:1.25rem;">
+              <button type="submit" class="btn btn--primary">Save Meetup Details</button>
+            </div>
+          </form>
+        </div>
+      </section>
+
+      <!-- Pre-Events Panel -->
+      <section class="portal-panel" id="panel-events">
+        <div class="portal-card">
+          <h2 class="portal-card__title">Add Pre-Event</h2>
+          <form id="eventForm">
+            <div class="form-row">
+              <div class="form-group">
+                <label for="eventTitle">Event Title <span class="required">*</span></label>
+                <input type="text" id="eventTitle" required placeholder="e.g. Alumni Cricket Match">
+              </div>
+              <div class="form-group">
+                <label for="eventDate">Date <span class="required">*</span></label>
+                <input type="date" id="eventDate" required>
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label for="eventTime">Time</label>
+                <input type="text" id="eventTime" placeholder="e.g. 10:00 AM">
+              </div>
+              <div class="form-group">
+                <label for="eventVenue">Venue</label>
+                <input type="text" id="eventVenue" placeholder="e.g. College Ground">
+              </div>
+            </div>
+            <div class="form-group">
+              <label for="eventDesc">Description</label>
+              <textarea id="eventDesc" rows="3" style="width:100%;padding:0.75rem 1rem;font-family:var(--font-body);font-size:0.95rem;border:1.5px solid transparent;border-radius:10px;background:var(--slate-100);resize:vertical;"></textarea>
+            </div>
+            <div class="form-group">
+              <label for="eventPhotos">Event Photos</label>
+              <input type="file" id="eventPhotos" accept="image/jpeg,image/png,image/webp,image/gif" multiple>
+              <p class="form-hint">Upload photos for this pre-event (max 5 MB each, JPEG/PNG/WebP/GIF).</p>
+              <div class="photo-preview" id="eventPhotoPreview"></div>
+            </div>
+            <label class="checkbox-label">
+              <input type="checkbox" id="eventPublished" checked>
+              Publish on public site
+            </label>
+            <div style="margin-top:1.25rem;">
+              <button type="submit" class="btn btn--primary" id="eventSubmitBtn">Add Pre-Event</button>
+              <button type="button" class="btn btn--ghost" id="eventCancelBtn" hidden style="margin-left:0.5rem;">Cancel Edit</button>
+            </div>
+          </form>
+        </div>
+
+        <div class="portal-card">
+          <h2 class="portal-card__title">Pre-Events Programme</h2>
+          <div id="eventsTableWrap">
+            <p class="empty-state">Loading pre-events...</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- Users Panel -->
+      <section class="portal-panel" id="panel-users">
+        <div class="portal-card">
+          <h2 class="portal-card__title">Create Coordinator Account</h2>
+          <form id="userForm">
+            <div class="form-row">
+              <div class="form-group">
+                <label for="userName">Full Name <span class="required">*</span></label>
+                <input type="text" id="userName" required placeholder="Coordinator name">
+              </div>
+              <div class="form-group">
+                <label for="userUsername">Username <span class="required">*</span></label>
+                <input type="text" id="userUsername" required placeholder="e.g. cse.faculty">
+                <p class="form-hint">Used for login. Faculty coordinators: use department prefix.</p>
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label for="userRole">Role <span class="required">*</span></label>
+                <select id="userRole" required>
+                  <option value="">Select role</option>
+                  <option value="faculty_coordinator">Faculty Coordinator</option>
+                  <option value="student_volunteer">Student Volunteer</option>
+                  <option value="secretary">Secretary</option>
+                  <option value="joint_secretary">Joint Secretary</option>
+                  <option value="principal">Principal</option>
+                  <option value="dean_alumni_international">DEAN - Alumni & International Affairs</option>
+                  <option value="treasurer">Treasurer</option>
+                </select>
+              </div>
+              <div class="form-group" id="deptGroup">
+                <label for="userDepartment">Department</label>
+                <select id="userDepartment">
+                  <option value="">Not applicable</option>
+                  <option value="CSE">CSE</option>
+                  <option value="ECE">ECE</option>
+                  <option value="EEE">EEE</option>
+                  <option value="MECH">MECH</option>
+                  <option value="IT">IT</option>
+                </select>
+              </div>
+            </div>
+            <div class="form-group">
+              <label for="userPassword">Temporary Password <span class="required">*</span></label>
+              <input type="password" id="userPassword" required minlength="8" placeholder="Minimum 8 characters">
+              <p class="form-hint">Share this temporary password with the user. They will be asked to change it on first login.</p>
+            </div>
+            <button type="submit" class="btn btn--primary">Create Account</button>
+          </form>
+        </div>
+
+        <div class="portal-card">
+          <h2 class="portal-card__title">Institutional Users</h2>
+          <div id="usersTableWrap">
+            <p class="empty-state">Loading users...</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- Account Panel -->
+      <section class="portal-panel" id="panel-account">
+        <div id="accountPasswordCard"></div>
+      </section>
+    </main>
+  </div>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <script type="module" src="../js/admin.js"></script>
+</body>
+</html>

@@ -1,0 +1,84 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function sessionPath(sessionId) {
+      return /databases/$(database)/documents/sessions/$(sessionId);
+    }
+
+    function isValidSession(sessionId) {
+      return sessionId is string
+        && exists(sessionPath(sessionId))
+        && get(sessionPath(sessionId)).data.expiresAt > request.time;
+    }
+
+    function isAdminSession(sessionId) {
+      return isValidSession(sessionId)
+        && get(sessionPath(sessionId)).data.role == 'admin';
+    }
+
+    function isInstitutionalSession(sessionId) {
+      return isValidSession(sessionId);
+    }
+
+    function isSelfPasswordUpdate(userId) {
+      return isValidSession(request.resource.data._sessionId)
+        && get(sessionPath(request.resource.data._sessionId)).data.userId == userId
+        && request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['passwordHash', 'salt', 'mustChangePassword', 'passwordChangedAt', 'updatedAt', '_sessionId']);
+    }
+
+    match /alumni/{docId} {
+      allow read: if false;
+      allow create: if request.resource.data.keys().hasAll(['fullName', 'email', 'batch', 'department'])
+                    && request.resource.data.fullName is string
+                    && request.resource.data.email is string
+                    && request.resource.data.batch is string
+                    && request.resource.data.department is string;
+      allow update: if isAdminSession(request.resource.data._sessionId);
+      allow delete: if false;
+    }
+
+    match /institutional_users/{userId} {
+      allow get: if true;
+      allow list: if false;
+      allow create: if (userId == 'gecian_at_admin'
+                        && request.resource.data.role == 'admin'
+                        && request.resource.data.keys().hasAll(['passwordHash', 'salt', 'username']))
+                    || isAdminSession(request.resource.data._sessionId);
+      allow update: if isAdminSession(request.resource.data._sessionId)
+                    || isSelfPasswordUpdate(userId);
+      allow delete: if false;
+    }
+
+    match /institutional_users/_registry {
+      allow read: if true;
+      allow create, update: if isAdminSession(request.resource.data._sessionId);
+      allow delete: if false;
+    }
+
+    match /sessions/{sessionId} {
+      allow create: if request.resource.data.keys().hasAll(['userId', 'username', 'role', 'expiresAt'])
+                    && request.resource.data.expiresAt > request.time
+                    && exists(/databases/$(database)/documents/institutional_users/$(request.resource.data.userId))
+                    && get(/databases/$(database)/documents/institutional_users/$(request.resource.data.userId)).data.role == request.resource.data.role
+                    && get(/databases/$(database)/documents/institutional_users/$(request.resource.data.userId)).data.active != false;
+      allow get: if true;
+      allow list: if false;
+      allow delete: if true;
+      allow update: if false;
+    }
+
+    match /settings/{docId} {
+      allow read: if true;
+      allow create, update: if isAdminSession(request.resource.data._sessionId);
+      allow delete: if false;
+    }
+
+    match /pre_events/{eventId} {
+      allow read: if true;
+      allow create, update: if isAdminSession(request.resource.data._sessionId);
+      allow delete: if false;
+    }
+  }
+}

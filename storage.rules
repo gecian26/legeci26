@@ -1,0 +1,24 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    function isAdminSession(sessionId) {
+      return sessionId is string
+        && firestore.exists(/databases/(default)/documents/sessions/$(sessionId))
+        && firestore.get(/databases/(default)/documents/sessions/$(sessionId)).data.role == 'admin'
+        && firestore.get(/databases/(default)/documents/sessions/$(sessionId)).data.expiresAt > request.time;
+    }
+
+    function isValidImage() {
+      return request.resource.size < 5 * 1024 * 1024
+        && request.resource.contentType.matches('image/.*');
+    }
+
+    match /pre_events/{allPaths=**} {
+      allow read: if true;
+      allow write: if isValidImage()
+        && isAdminSession(request.resource.metadata.sessionId);
+      allow delete: if true;
+    }
+  }
+}

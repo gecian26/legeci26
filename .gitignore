@@ -1,0 +1,17 @@
+# OS / editor
+.DS_Store
+Thumbs.db
+Desktop.ini
+.vscode/
+.idea/
+*.log
+
+# Local env / secrets (if added later)
+.env
+.env.*
+!.env.example
+
+# Dependencies / build (if added later)
+node_modules/
+dist/
+.firebase/
