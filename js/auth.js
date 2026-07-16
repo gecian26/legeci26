@@ -90,6 +90,7 @@ async function createSession(user) {
     role: user.role,
     displayName: user.displayName || user.username,
     department: user.department || "",
+    team: user.team || "",
     mustChangePassword,
     expiresAt: Timestamp.fromDate(expiresAt),
     createdAt: serverTimestamp(),
@@ -101,6 +102,7 @@ async function createSession(user) {
     role: user.role,
     displayName: user.displayName || user.username,
     department: user.department || "",
+    team: user.team || "",
     mustChangePassword,
     expiresAt: expiresAt.toISOString(),
   };

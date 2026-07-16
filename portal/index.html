@@ -22,6 +22,7 @@
       </div>
       <ul class="portal-nav">
         <li><button class="portal-nav__link portal-nav__link--active" data-panel="dashboard">Dashboard</button></li>
+        <li><button class="portal-nav__link" data-panel="dept" id="navDept" hidden>Department Work</button></li>
         <li><button class="portal-nav__link" data-panel="account">Account</button></li>
       </ul>
       <div class="portal-sidebar__footer">
@@ -34,7 +35,7 @@
       <div class="portal-header">
         <div>
           <button class="portal-mobile-toggle" id="mobileToggle">☰ Menu</button>
-          <h1 id="pageTitle">Coordinator Dashboard</h1>
+          <h1 id="pageTitle">Dashboard</h1>
         </div>
         <span id="userName" style="color:var(--slate-500);font-size:0.9rem;"></span>
       </div>
@@ -42,24 +43,37 @@
       <div id="passwordPrompt" class="password-prompt-wrap" hidden></div>
 
       <section class="portal-panel portal-panel--active" id="panel-dashboard">
-        <div class="portal-card">
+        <div class="portal-card" style="margin-bottom:1.25rem;">
           <h2 class="portal-card__title">Welcome, <span id="welcomeName"></span></h2>
-          <p style="color:var(--slate-500);margin-bottom:1rem;">
+          <p style="color:var(--slate-500);">
             You are signed in as <strong id="roleLabel"></strong><span id="deptLabel"></span>.
           </p>
-          <p style="color:var(--slate-500);line-height:1.7;">
-            Coordinator-specific features will be configured in the next phase. For now, you can view the programme schedule below.
-          </p>
+        </div>
+
+        <div class="portal-card portal-card--event">
+          <div id="dashboardMeetup" class="dashboard-meetup-wrap">
+            <p class="empty-state" style="padding:2rem;color:rgba(255,255,255,0.7);">Loading event details...</p>
+          </div>
+          <div id="dashboardEvents" class="dashboard-meetup-wrap dashboard-meetup-wrap--bottom"></div>
+        </div>
+      </section>
+
+      <section class="portal-panel" id="panel-dept">
+        <div class="portal-card">
+          <h2 class="portal-card__title">Department Volunteers — <span id="deptNameLabel"></span></h2>
+          <p class="form-hint" style="margin-bottom:1rem;">Volunteers in your department, grouped by team. Task progress monitoring will expand in the next phase.</p>
+          <div id="deptVolunteersWrap"><p class="empty-state">Loading...</p></div>
         </div>
 
         <div class="portal-card">
-          <h2 class="portal-card__title">Mega Alumni Meetup</h2>
-          <div id="meetupInfo"><p class="empty-state">Loading...</p></div>
+          <h2 class="portal-card__title">Main Tasks (from Admin)</h2>
+          <p class="form-hint" style="margin-bottom:1rem;">Replicate a main task for your department and assign it to a student team.</p>
+          <div id="deptMainTasksWrap"><p class="empty-state">Loading...</p></div>
         </div>
 
         <div class="portal-card">
-          <h2 class="portal-card__title">Pre-Events Programme</h2>
-          <div id="eventsInfo"><p class="empty-state">Loading...</p></div>
+          <h2 class="portal-card__title">Department Tasks</h2>
+          <div id="deptTasksWrap"><p class="empty-state">Loading...</p></div>
         </div>
       </section>
 

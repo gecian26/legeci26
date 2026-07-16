@@ -80,5 +80,20 @@ service cloud.firestore {
       allow create, update: if isAdminSession(request.resource.data._sessionId);
       allow delete: if false;
     }
+
+    match /main_tasks/{taskId} {
+      allow read: if true;
+      allow create, update: if isAdminSession(request.resource.data._sessionId);
+      allow delete: if false;
+    }
+
+    match /dept_tasks/{taskId} {
+      allow read: if true;
+      allow create, update: if isAdminSession(request.resource.data._sessionId)
+                            || (isValidSession(request.resource.data._sessionId)
+                                && get(sessionPath(request.resource.data._sessionId)).data.role == 'faculty_coordinator'
+                                && get(sessionPath(request.resource.data._sessionId)).data.department == request.resource.data.department);
+      allow delete: if false;
+    }
   }
 }

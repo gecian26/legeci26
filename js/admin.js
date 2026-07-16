@@ -6,6 +6,7 @@ import {
   updateDoc,
   collection,
   getDocs,
+  addDoc,
   query,
   orderBy,
   serverTimestamp,
@@ -23,8 +24,11 @@ import {
   ROLE_LABELS,
   DEPARTMENTS,
   DEFAULT_MEETUP,
+  DEFAULT_TEAMS,
   USERS_COLLECTION,
   REGISTRY_DOC,
+  MAIN_TASKS_COLLECTION,
+  TEAMS_DOC,
   normalizeUsername,
   formatDateShort,
   escapeHtml,
@@ -35,10 +39,26 @@ import {
   passwordFormHtml,
   renderPasswordPrompt,
 } from "../js/password.js";
+import {
+  renderMeetupOverview,
+  renderPreEventsOverview,
+} from "../js/dashboard-event.js";
+import {
+  loadTeams,
+  saveTeams,
+  teamLabel,
+  slugifyTeamId,
+  validateVolunteerRow,
+} from "../js/teams.js";
+import {
+  downloadVolunteerTemplate,
+  parseVolunteerExcel,
+} from "../js/volunteers-excel.js";
 
 const toast = document.getElementById("toast");
 let editingEventId = null;
 let eventPhotos = [];
+let cachedTeams = [];
 
 initAuthGuard([ROLES.ADMIN], (session) => {
   initPortal(session);
@@ -47,9 +67,13 @@ initAuthGuard([ROLES.ADMIN], (session) => {
 function initPortal(session) {
   document.getElementById("adminName").textContent = session.displayName || "Administrator";
   setupNavigation();
+  loadDashboard();
   setupMeetup();
   setupEvents();
   setupUsers();
+  setupTeams();
+  setupVolunteers();
+  setupMainTasks();
   setupAccount(session);
   document.getElementById("logoutBtn").addEventListener("click", async () => {
     await logout();
@@ -75,7 +99,16 @@ function setupAccount(session) {
 }
 
 function setupNavigation() {
-  const titles = { meetup: "Mega Meetup", events: "Pre-Events", users: "Coordinators", account: "Account" };
+  const titles = {
+    dashboard: "Dashboard",
+    meetup: "Mega Meetup",
+    events: "Pre-Events",
+    users: "Coordinators",
+    volunteers: "Volunteers",
+    teams: "Teams",
+    tasks: "Tasks",
+    account: "Account",
+  };
 
   document.querySelectorAll(".portal-nav__link[data-panel]").forEach((link) => {
     link.addEventListener("click", () => {
@@ -94,8 +127,12 @@ function setupNavigation() {
   });
 
   document.getElementById("userRole").addEventListener("change", (e) => {
-    const showDept = e.target.value === ROLES.FACULTY;
-    document.getElementById("userDepartment").required = showDept;
+    const role = e.target.value;
+    const needsDept = role === ROLES.FACULTY || role === ROLES.STUDENT;
+    const needsTeam = role === ROLES.STUDENT;
+    document.getElementById("userDepartment").required = needsDept;
+    document.getElementById("teamGroup").hidden = !needsTeam;
+    document.getElementById("userTeam").required = needsTeam;
   });
 }
 
@@ -106,6 +143,29 @@ async function ensureAdminSession() {
     return null;
   }
   return session;
+}
+
+async function loadDashboard() {
+  const meetupEl = document.getElementById("dashboardMeetup");
+  const eventsEl = document.getElementById("dashboardEvents");
+
+  try {
+    const snap = await getDoc(doc(db, "settings", "meetup"));
+    renderMeetupOverview(meetupEl, snap.exists() ? snap.data() : DEFAULT_MEETUP);
+  } catch (err) {
+    console.error(err);
+    renderMeetupOverview(meetupEl, DEFAULT_MEETUP);
+  }
+
+  try {
+    const q = query(collection(db, "pre_events"), orderBy("date", "asc"));
+    const snap = await getDocs(q);
+    const events = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    renderPreEventsOverview(eventsEl, events);
+  } catch (err) {
+    console.error(err);
+    renderPreEventsOverview(eventsEl, []);
+  }
 }
 
 // ── Meetup ────────────────────────────────────────────
@@ -151,6 +211,7 @@ async function setupMeetup() {
         updatedAt: serverTimestamp(),
       }));
       showToast(toast, "Meetup details saved.", "success");
+      loadDashboard();
     } catch (err) {
       console.error(err);
       const msg = err.code === "permission-denied"
@@ -212,6 +273,7 @@ function setupEvents() {
         renderEventPhotoPreview();
       }
       loadEventsTable();
+      loadDashboard();
     } catch (err) {
       console.error(err);
       const msg = err.code === "permission-denied" || err.message === "NO_SESSION"
@@ -362,6 +424,7 @@ async function deleteEvent(id) {
     }));
     showToast(toast, "Pre-event deleted.", "success");
     loadEventsTable();
+    loadDashboard();
   } catch (err) {
     showToast(toast, "Failed to delete.", "error");
   }
@@ -391,11 +454,17 @@ function setupUsers() {
     const username = document.getElementById("userUsername").value.trim().toLowerCase();
     const role = document.getElementById("userRole").value;
     const department = document.getElementById("userDepartment").value;
+    const team = document.getElementById("userTeam").value;
     const password = document.getElementById("userPassword").value;
     const userId = normalizeUsername(username);
 
-    if (role === ROLES.FACULTY && !department) {
-      showToast(toast, "Department is required for faculty coordinators.", "error");
+    if ((role === ROLES.FACULTY || role === ROLES.STUDENT) && !department) {
+      showToast(toast, "Department is required for this role.", "error");
+      return;
+    }
+
+    if (role === ROLES.STUDENT && !team) {
+      showToast(toast, "Team is required for student volunteers.", "error");
       return;
     }
 
@@ -412,11 +481,16 @@ function setupUsers() {
 
     try {
       const { passwordHash, salt } = await hashPassword(password);
+      const deptValue =
+        role === ROLES.FACULTY || role === ROLES.STUDENT ? department : "";
+      const teamValue = role === ROLES.STUDENT ? team : "";
+
       await setDoc(doc(db, USERS_COLLECTION, userId), withSession({
         username,
         displayName,
         role,
-        department: role === ROLES.FACULTY ? department : "",
+        department: deptValue,
+        team: teamValue,
         passwordHash,
         salt,
         active: true,
@@ -425,12 +499,22 @@ function setupUsers() {
       }));
 
       const registry = await getRegistry();
-      registry.push({ userId, username, displayName, role, department: role === ROLES.FACULTY ? department : "", active: true });
+      registry.push({
+        userId,
+        username,
+        displayName,
+        role,
+        department: deptValue,
+        team: teamValue,
+        active: true,
+      });
       await saveRegistry(registry);
 
       showToast(toast, `Account created for ${displayName}. Ask them to change the temporary password after login.`, "success");
       e.target.reset();
+      document.getElementById("teamGroup").hidden = true;
       loadUsersTable();
+      loadVolunteersTable();
     } catch (err) {
       console.error(err);
       showToast(toast, "Failed to create account.", "error");
@@ -453,7 +537,7 @@ async function loadUsersTable() {
     const deptOrder = DEPARTMENTS.map((d) => d.value);
 
     const users = (await getRegistry())
-      .filter((u) => u.role !== ROLES.ADMIN)
+      .filter((u) => u.role !== ROLES.ADMIN && u.role !== ROLES.STUDENT)
       .sort((a, b) => {
         const roleA = roleOrder.indexOf(a.role);
         const roleB = roleOrder.indexOf(b.role);
@@ -513,10 +597,428 @@ async function loadUsersTable() {
 
         showToast(toast, active ? "Account deactivated." : "Account activated.", "success");
         loadUsersTable();
+        loadVolunteersTable();
       });
     });
   } catch (err) {
     console.error(err);
     wrap.innerHTML = '<p class="empty-state">Failed to load users.</p>';
+  }
+}
+
+// ── Teams ─────────────────────────────────────────────
+async function refreshTeamSelects() {
+  cachedTeams = await loadTeams();
+  const select = document.getElementById("userTeam");
+  if (select) {
+    const current = select.value;
+    select.innerHTML = '<option value="">Select team</option>' +
+      cachedTeams
+        .filter((t) => t.active !== false)
+        .map((t) => `<option value="${escapeHtml(t.id)}">${escapeHtml(t.name)}</option>`)
+        .join("");
+    select.value = current;
+  }
+  renderTaskTeamCheckboxes();
+}
+
+function renderTaskTeamCheckboxes() {
+  const wrap = document.getElementById("taskTeamsWrap");
+  if (!wrap) return;
+
+  const activeTeams = cachedTeams.filter((t) => t.active !== false);
+  if (!activeTeams.length) {
+    wrap.innerHTML = '<p class="form-hint">No teams configured. Add teams under Teams first.</p>';
+    return;
+  }
+
+  wrap.innerHTML = activeTeams
+    .map(
+      (t) => `
+      <label class="checkbox-label">
+        <input type="checkbox" name="taskTeam" value="${escapeHtml(t.id)}">
+        ${escapeHtml(t.name)}
+      </label>`
+    )
+    .join("");
+}
+
+function getSelectedTaskTeams() {
+  return [...document.querySelectorAll('input[name="taskTeam"]:checked')].map((el) => el.value);
+}
+
+function formatTaskTeamList(teams, teamIds) {
+  if (!teamIds?.length) return "All teams";
+  return teamIds.map((id) => teamLabel(teams, id)).join(", ");
+}
+
+function setupTeams() {
+  refreshTeamSelects().then(loadTeamsTable);
+
+  // Ensure defaults exist in Firestore once
+  loadTeams().then(async (teams) => {
+    const snap = await getDoc(doc(db, "settings", TEAMS_DOC));
+    if (!snap.exists()) {
+      try {
+        await saveTeams(DEFAULT_TEAMS.map((t) => ({ ...t })));
+        cachedTeams = DEFAULT_TEAMS.map((t) => ({ ...t }));
+        loadTeamsTable();
+      } catch (err) {
+        console.error(err);
+      }
+    }
+  });
+
+  document.getElementById("teamForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    if (!(await ensureAdminSession())) return;
+
+    const name = document.getElementById("teamName").value.trim();
+    let id = document.getElementById("teamId").value.trim().toLowerCase() || slugifyTeamId(name);
+    id = slugifyTeamId(id);
+
+    if (!name || !id) {
+      showToast(toast, "Team name is required.", "error");
+      return;
+    }
+
+    const teams = await loadTeams();
+    if (teams.some((t) => t.id === id)) {
+      showToast(toast, "Team ID already exists.", "error");
+      return;
+    }
+
+    teams.push({ id, name, active: true });
+    try {
+      await saveTeams(teams);
+      showToast(toast, `Team "${name}" added.`, "success");
+      e.target.reset();
+      await refreshTeamSelects();
+      loadTeamsTable();
+    } catch (err) {
+      console.error(err);
+      showToast(toast, "Failed to save team.", "error");
+    }
+  });
+}
+
+async function loadTeamsTable() {
+  const wrap = document.getElementById("teamsTableWrap");
+  try {
+    const teams = await loadTeams();
+    cachedTeams = teams;
+    if (!teams.length) {
+      wrap.innerHTML = '<p class="empty-state">No teams configured.</p>';
+      return;
+    }
+
+    wrap.innerHTML = `
+      <table class="data-table">
+        <thead><tr><th>Team</th><th>ID (for Excel)</th><th>Status</th><th>Actions</th></tr></thead>
+        <tbody>
+          ${teams
+            .map(
+              (t) => `
+            <tr>
+              <td><strong>${escapeHtml(t.name)}</strong></td>
+              <td><code>${escapeHtml(t.id)}</code></td>
+              <td><span class="badge ${t.active !== false ? "badge--published" : "badge--inactive"}">${t.active !== false ? "Active" : "Inactive"}</span></td>
+              <td class="table-actions">
+                <button class="btn btn--ghost btn--sm" data-toggle-team="${escapeHtml(t.id)}" data-active="${t.active !== false}">
+                  ${t.active !== false ? "Deactivate" : "Activate"}
+                </button>
+              </td>
+            </tr>`
+            )
+            .join("")}
+        </tbody>
+      </table>`;
+
+    wrap.querySelectorAll("[data-toggle-team]").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        if (!(await ensureAdminSession())) return;
+        const id = btn.dataset.toggleTeam;
+        const teams = await loadTeams();
+        const idx = teams.findIndex((t) => t.id === id);
+        if (idx < 0) return;
+        teams[idx].active = !(teams[idx].active !== false);
+        await saveTeams(teams);
+        await refreshTeamSelects();
+        loadTeamsTable();
+        showToast(toast, "Team updated.", "success");
+      });
+    });
+  } catch (err) {
+    console.error(err);
+    wrap.innerHTML = '<p class="empty-state">Failed to load teams.</p>';
+  }
+}
+
+// ── Volunteers Excel ────────────────────────────────────
+function setupVolunteers() {
+  loadVolunteersTable();
+
+  document.getElementById("downloadVolunteerTemplateBtn").addEventListener("click", async () => {
+    try {
+      const teams = await loadTeams();
+      await downloadVolunteerTemplate(teams);
+      showToast(toast, "Excel template downloaded.", "success");
+    } catch (err) {
+      console.error("Volunteer template download failed:", err);
+      showToast(toast, err?.message || "Could not generate template. Try again.", "error");
+    }
+  });
+
+  document.getElementById("uploadVolunteersBtn").addEventListener("click", async () => {
+    if (!(await ensureAdminSession())) return;
+
+    const file = document.getElementById("volunteerExcel").files[0];
+    const resultEl = document.getElementById("volunteerUploadResult");
+    if (!file) {
+      showToast(toast, "Please choose an Excel file.", "error");
+      return;
+    }
+
+    let rows;
+    try {
+      rows = await parseVolunteerExcel(file);
+    } catch (err) {
+      console.error(err);
+      showToast(toast, "Could not read Excel file.", "error");
+      return;
+    }
+
+    if (!rows.length) {
+      showToast(toast, "Excel has no data rows.", "error");
+      return;
+    }
+
+    const teams = await loadTeams();
+    const registry = await getRegistry();
+    let created = 0;
+    let skipped = 0;
+    const messages = [];
+
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i];
+      const rowLabel = `Row ${i + 2}`;
+      const { errors, data } = validateVolunteerRow(row, teams);
+      if (errors.length) {
+        skipped++;
+        messages.push(`${rowLabel} (${data.mobile || data.fullName || "unknown"}): ${errors.join("; ")}`);
+        continue;
+      }
+
+      const userId = normalizeUsername(data.username);
+      const existing = await getDoc(doc(db, USERS_COLLECTION, userId));
+      if (existing.exists() || registry.some((u) => u.userId === userId || u.username === data.username)) {
+        skipped++;
+        messages.push(`${rowLabel} ${data.mobile}: already exists`);
+        continue;
+      }
+
+      try {
+        const { passwordHash, salt } = await hashPassword(data.password);
+        await setDoc(doc(db, USERS_COLLECTION, userId), withSession({
+          username: data.username,
+          displayName: data.fullName,
+          role: ROLES.STUDENT,
+          department: data.department,
+          team: data.team,
+          mobile: data.mobile,
+          passwordHash,
+          salt,
+          active: true,
+          mustChangePassword: true,
+          createdAt: serverTimestamp(),
+        }));
+
+        registry.push({
+          userId,
+          username: data.username,
+          displayName: data.fullName,
+          role: ROLES.STUDENT,
+          department: data.department,
+          team: data.team,
+          mobile: data.mobile,
+          active: true,
+        });
+        created++;
+      } catch (err) {
+        skipped++;
+        messages.push(`${rowLabel} ${data.mobile}: ${err.message || "failed"}`);
+      }
+    }
+
+    await saveRegistry(registry);
+    loadVolunteersTable();
+    loadUsersTable();
+
+    resultEl.innerHTML = `
+      <p><strong>Created:</strong> ${created} &nbsp;|&nbsp; <strong>Skipped:</strong> ${skipped}</p>
+      ${messages.length ? `<ul style="margin-top:0.75rem;color:var(--slate-500);font-size:0.85rem;">${messages.slice(0, 20).map((m) => `<li>${escapeHtml(m)}</li>`).join("")}${messages.length > 20 ? "<li>…</li>" : ""}</ul>` : ""}`;
+
+    showToast(toast, `Volunteer upload finished. Created ${created}.`, created ? "success" : "error");
+  });
+}
+
+async function loadVolunteersTable() {
+  const wrap = document.getElementById("volunteersTableWrap");
+  try {
+    const teams = await loadTeams();
+    const deptOrder = DEPARTMENTS.map((d) => d.value);
+    const volunteers = (await getRegistry())
+      .filter((u) => u.role === ROLES.STUDENT)
+      .sort((a, b) => {
+        const deptCmp =
+          (a.department ? deptOrder.indexOf(a.department) : 99) -
+          (b.department ? deptOrder.indexOf(b.department) : 99);
+        if (deptCmp !== 0) return deptCmp;
+        const teamCmp = (a.team || "").localeCompare(b.team || "");
+        if (teamCmp !== 0) return teamCmp;
+        return (a.displayName || "").localeCompare(b.displayName || "");
+      });
+
+    if (!volunteers.length) {
+      wrap.innerHTML = '<p class="empty-state">No student volunteers yet. Upload an Excel file or create one under Coordinators.</p>';
+      return;
+    }
+
+    wrap.innerHTML = `
+      <table class="data-table">
+        <thead><tr><th>Name / Mobile</th><th>Department</th><th>Team</th><th>Status</th><th>Actions</th></tr></thead>
+        <tbody>
+          ${volunteers
+            .map(
+              (u) => `
+            <tr>
+              <td><strong>${escapeHtml(u.displayName)}</strong><br><small style="color:var(--slate-500)">${escapeHtml(u.mobile || u.username)}</small></td>
+              <td>${escapeHtml(u.department || "—")}</td>
+              <td><span class="badge badge--role">${escapeHtml(teamLabel(teams, u.team))}</span></td>
+              <td><span class="badge ${u.active !== false ? "badge--published" : "badge--inactive"}">${u.active !== false ? "Active" : "Inactive"}</span></td>
+              <td class="table-actions">
+                <button class="btn btn--ghost btn--sm" data-toggle-vol="${u.userId}" data-active="${u.active !== false}">
+                  ${u.active !== false ? "Deactivate" : "Activate"}
+                </button>
+              </td>
+            </tr>`
+            )
+            .join("")}
+        </tbody>
+      </table>`;
+
+    wrap.querySelectorAll("[data-toggle-vol]").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        if (!(await ensureAdminSession())) return;
+        const active = btn.dataset.active === "true";
+        const userId = btn.dataset.toggleVol;
+        await updateDoc(doc(db, USERS_COLLECTION, userId), withSession({ active: !active }));
+        const registry = await getRegistry();
+        const idx = registry.findIndex((u) => u.userId === userId);
+        if (idx >= 0) {
+          registry[idx].active = !active;
+          await saveRegistry(registry);
+        }
+        loadVolunteersTable();
+        showToast(toast, active ? "Volunteer deactivated." : "Volunteer activated.", "success");
+      });
+    });
+  } catch (err) {
+    console.error(err);
+    wrap.innerHTML = '<p class="empty-state">Failed to load volunteers.</p>';
+  }
+}
+
+// ── Main Tasks ────────────────────────────────────────
+function setupMainTasks() {
+  refreshTeamSelects();
+  loadMainTasksTable();
+
+  document.getElementById("mainTaskForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    if (!(await ensureAdminSession())) return;
+
+    const title = document.getElementById("taskTitle").value.trim();
+    const description = document.getElementById("taskDescription").value.trim();
+    const dueDate = document.getElementById("taskDueDate").value;
+    const status = document.getElementById("taskStatus").value;
+    const teams = getSelectedTaskTeams();
+
+    try {
+      await addDoc(collection(db, MAIN_TASKS_COLLECTION), withSession({
+        title,
+        description,
+        dueDate,
+        status,
+        teams,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      }));
+      showToast(toast, "Main task created.", "success");
+      e.target.reset();
+      renderTaskTeamCheckboxes();
+      loadMainTasksTable();
+    } catch (err) {
+      console.error(err);
+      showToast(toast, "Failed to create task.", "error");
+    }
+  });
+}
+
+async function loadMainTasksTable() {
+  const wrap = document.getElementById("mainTasksTableWrap");
+  try {
+    const teams = await loadTeams();
+    cachedTeams = teams;
+    const q = query(collection(db, MAIN_TASKS_COLLECTION), orderBy("createdAt", "desc"));
+    const snap = await getDocs(q);
+    const tasks = snap.docs
+      .map((d) => ({ id: d.id, ...d.data() }))
+      .filter((t) => !t._deleted);
+
+    if (!tasks.length) {
+      wrap.innerHTML = '<p class="empty-state">No main tasks yet.</p>';
+      return;
+    }
+
+    wrap.innerHTML = `
+      <table class="data-table">
+        <thead><tr><th>Title</th><th>Teams</th><th>Due</th><th>Status</th><th>Actions</th></tr></thead>
+        <tbody>
+          ${tasks
+            .map(
+              (t) => `
+            <tr>
+              <td>
+                <strong>${escapeHtml(t.title)}</strong>
+                ${t.description ? `<br><small style="color:var(--slate-500)">${escapeHtml(t.description)}</small>` : ""}
+              </td>
+              <td>${escapeHtml(formatTaskTeamList(teams, t.teams))}</td>
+              <td>${escapeHtml(formatDateShort(t.dueDate) || "—")}</td>
+              <td><span class="badge badge--role">${escapeHtml(t.status || "open")}</span></td>
+              <td class="table-actions">
+                <button class="btn btn--danger btn--sm" data-delete-task="${t.id}">Delete</button>
+              </td>
+            </tr>`
+            )
+            .join("")}
+        </tbody>
+      </table>`;
+
+    wrap.querySelectorAll("[data-delete-task]").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        if (!confirm("Delete this main task?")) return;
+        if (!(await ensureAdminSession())) return;
+        await updateDoc(doc(db, MAIN_TASKS_COLLECTION, btn.dataset.deleteTask), withSession({
+          _deleted: true,
+          updatedAt: serverTimestamp(),
+        }));
+        loadMainTasksTable();
+        showToast(toast, "Task deleted.", "success");
+      });
+    });
+  } catch (err) {
+    console.error(err);
+    wrap.innerHTML = '<p class="empty-state">Failed to load tasks.</p>';
   }
 }

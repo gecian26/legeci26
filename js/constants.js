@@ -35,6 +35,14 @@ export const SESSION_KEY = "gecian_session";
 export const USERS_COLLECTION = "institutional_users";
 export const SESSIONS_COLLECTION = "sessions";
 export const REGISTRY_DOC = "_registry";
+export const TEAMS_DOC = "teams";
+export const MAIN_TASKS_COLLECTION = "main_tasks";
+export const DEPT_TASKS_COLLECTION = "dept_tasks";
+
+export const DEFAULT_TEAMS = [
+  { id: "media", name: "Media team", active: true },
+  { id: "outreach", name: "Outreach team", active: true },
+];
 
 export function normalizeUsername(username) {
   return username.trim().toLowerCase().replace(/@/g, "_at_").replace(/\./g, "_");

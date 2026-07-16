@@ -21,9 +21,13 @@
         </div>
       </div>
       <ul class="portal-nav">
-        <li><button class="portal-nav__link portal-nav__link--active" data-panel="meetup">Mega Meetup</button></li>
+        <li><button class="portal-nav__link portal-nav__link--active" data-panel="dashboard">Dashboard</button></li>
+        <li><button class="portal-nav__link" data-panel="meetup">Mega Meetup</button></li>
         <li><button class="portal-nav__link" data-panel="events">Pre-Events</button></li>
         <li><button class="portal-nav__link" data-panel="users">Coordinators</button></li>
+        <li><button class="portal-nav__link" data-panel="volunteers">Volunteers</button></li>
+        <li><button class="portal-nav__link" data-panel="teams">Teams</button></li>
+        <li><button class="portal-nav__link" data-panel="tasks">Tasks</button></li>
         <li><button class="portal-nav__link" data-panel="account">Account</button></li>
       </ul>
       <div class="portal-sidebar__footer">
@@ -36,15 +40,28 @@
       <div class="portal-header">
         <div>
           <button class="portal-mobile-toggle" id="mobileToggle">☰ Menu</button>
-          <h1 id="pageTitle">Mega Meetup</h1>
+          <h1 id="pageTitle">Dashboard</h1>
         </div>
         <span id="adminName" style="color:var(--slate-500);font-size:0.9rem;"></span>
       </div>
 
       <div id="passwordPrompt" class="password-prompt-wrap" hidden></div>
 
+      <!-- Dashboard Panel -->
+      <section class="portal-panel portal-panel--active" id="panel-dashboard">
+        <div class="portal-card portal-card--event">
+          <div id="dashboardMeetup" class="dashboard-meetup-wrap">
+            <p class="empty-state" style="padding:2rem;">Loading event details...</p>
+          </div>
+          <div id="dashboardEvents" class="dashboard-meetup-wrap dashboard-meetup-wrap--bottom"></div>
+        </div>
+        <p class="form-hint" style="margin-top:1rem;">
+          Configure meetup and pre-event details from <strong>Mega Meetup</strong> and <strong>Pre-Events</strong> in the sidebar.
+        </p>
+      </section>
+
       <!-- Meetup Panel -->
-      <section class="portal-panel portal-panel--active" id="panel-meetup">
+      <section class="portal-panel" id="panel-meetup">
         <div class="portal-card">
           <h2 class="portal-card__title">Mega Alumni Meetup Configuration</h2>
           <p class="form-hint" style="margin-bottom:1.25rem;">Configure the main meetup details shown on the public homepage.</p>
@@ -174,6 +191,13 @@
                 </select>
               </div>
             </div>
+            <div class="form-group" id="teamGroup" hidden>
+              <label for="userTeam">Student Team</label>
+              <select id="userTeam">
+                <option value="">Select team</option>
+              </select>
+              <p class="form-hint">Required for student volunteers. Manage teams from the Teams section.</p>
+            </div>
             <div class="form-group">
               <label for="userPassword">Temporary Password <span class="required">*</span></label>
               <input type="password" id="userPassword" required minlength="8" placeholder="Minimum 8 characters">
@@ -188,6 +212,114 @@
           <div id="usersTableWrap">
             <p class="empty-state">Loading users...</p>
           </div>
+        </div>
+      </section>
+
+      <!-- Volunteers Excel Panel -->
+      <section class="portal-panel" id="panel-volunteers">
+        <div class="portal-card">
+          <h2 class="portal-card__title">Upload Student Volunteers (Excel)</h2>
+          <p class="form-hint" style="margin-bottom:1rem;">
+            Create many volunteer logins at once. Use the Excel template with dropdowns for
+            <strong>department</strong> and <strong>team</strong>.
+          </p>
+          <p class="form-hint" style="margin-bottom:1rem;">
+            Columns: <code>fullName</code>, <code>mobile</code>, <code>department</code>, <code>team</code>.
+            <strong>Mobile</strong> is used as both username and temporary password; volunteers must change it after first login.
+          </p>
+          <div style="display:flex;gap:0.75rem;flex-wrap:wrap;margin-bottom:1rem;">
+            <button type="button" class="btn btn--ghost" id="downloadVolunteerTemplateBtn">Download Excel Template</button>
+          </div>
+          <div class="form-group">
+            <label for="volunteerExcel">Excel File (.xlsx)</label>
+            <input type="file" id="volunteerExcel" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
+          </div>
+          <button type="button" class="btn btn--primary" id="uploadVolunteersBtn">Upload &amp; Create Accounts</button>
+          <div id="volunteerUploadResult" style="margin-top:1rem;"></div>
+        </div>
+
+        <div class="portal-card">
+          <h2 class="portal-card__title">Student Volunteers</h2>
+          <div id="volunteersTableWrap">
+            <p class="empty-state">Loading volunteers...</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- Teams Panel -->
+      <section class="portal-panel" id="panel-teams">
+        <div class="portal-card">
+          <h2 class="portal-card__title">Manage Student Teams</h2>
+          <p class="form-hint" style="margin-bottom:1.25rem;">
+            Teams are used when assigning volunteers and department-level tasks. Default teams: Media and Outreach.
+          </p>
+          <form id="teamForm">
+            <div class="form-row">
+              <div class="form-group">
+                <label for="teamName">Team Name <span class="required">*</span></label>
+                <input type="text" id="teamName" required placeholder="e.g. Logistics team">
+              </div>
+              <div class="form-group">
+                <label for="teamId">Team ID</label>
+                <input type="text" id="teamId" placeholder="auto from name (e.g. logistics)">
+                <p class="form-hint">Used in Excel uploads. Lowercase letters, numbers, underscore.</p>
+              </div>
+            </div>
+            <button type="submit" class="btn btn--primary">Add Team</button>
+          </form>
+        </div>
+        <div class="portal-card">
+          <h2 class="portal-card__title">Configured Teams</h2>
+          <div id="teamsTableWrap"><p class="empty-state">Loading teams...</p></div>
+        </div>
+      </section>
+
+      <!-- Tasks Panel -->
+      <section class="portal-panel" id="panel-tasks">
+        <div class="portal-card">
+          <h2 class="portal-card__title">Create Main Task</h2>
+          <p class="form-hint" style="margin-bottom:1.25rem;">
+            Main tasks are created here. Department faculty coordinators can later replicate them for their department and assign to student teams.
+            Detailed task workflow will be expanded next.
+          </p>
+          <form id="mainTaskForm">
+            <div class="form-group">
+              <label for="taskTitle">Task Title <span class="required">*</span></label>
+              <input type="text" id="taskTitle" required placeholder="e.g. Collect alumni contact list">
+            </div>
+            <div class="form-group">
+              <label for="taskDescription">Description</label>
+              <textarea id="taskDescription" rows="3" style="width:100%;padding:0.75rem 1rem;font-family:var(--font-body);font-size:0.95rem;border:1.5px solid transparent;border-radius:10px;background:var(--slate-100);resize:vertical;"></textarea>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label for="taskDueDate">Due Date</label>
+                <input type="date" id="taskDueDate">
+              </div>
+              <div class="form-group">
+                <label for="taskStatus">Status</label>
+                <select id="taskStatus">
+                  <option value="open">Open</option>
+                  <option value="in_progress">In Progress</option>
+                  <option value="done">Done</option>
+                </select>
+              </div>
+            </div>
+            <div class="form-group">
+              <label>Teams <span style="font-weight:400;color:var(--slate-500);">(optional)</span></label>
+              <p class="form-hint" style="margin-top:0;margin-bottom:0.75rem;">
+                Leave unchecked to allow any team. Select one or more to restrict which teams coordinators can assign this task to.
+              </p>
+              <div id="taskTeamsWrap" class="task-teams-checkboxes">
+                <p class="form-hint">Loading teams…</p>
+              </div>
+            </div>
+            <button type="submit" class="btn btn--primary">Add Main Task</button>
+          </form>
+        </div>
+        <div class="portal-card">
+          <h2 class="portal-card__title">Main Tasks</h2>
+          <div id="mainTasksTableWrap"><p class="empty-state">Loading tasks...</p></div>
         </div>
       </section>
 
