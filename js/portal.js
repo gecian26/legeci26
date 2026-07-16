@@ -129,10 +129,12 @@ function setupAccount(session) {
 async function loadDashboard() {
   const meetupEl = document.getElementById("dashboardMeetup");
   const eventsEl = document.getElementById("dashboardEvents");
+  let meetupData = DEFAULT_MEETUP;
 
   try {
     const snap = await getDoc(doc(db, "settings", "meetup"));
-    renderMeetupOverview(meetupEl, snap.exists() ? snap.data() : DEFAULT_MEETUP);
+    meetupData = snap.exists() ? { ...DEFAULT_MEETUP, ...snap.data() } : DEFAULT_MEETUP;
+    renderMeetupOverview(meetupEl, meetupData);
   } catch (err) {
     console.error(err);
     renderMeetupOverview(meetupEl, DEFAULT_MEETUP);
@@ -142,10 +144,10 @@ async function loadDashboard() {
     const q = query(collection(db, "pre_events"), orderBy("date", "asc"));
     const snap = await getDocs(q);
     const events = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-    renderPreEventsOverview(eventsEl, events);
+    renderPreEventsOverview(eventsEl, events, meetupData);
   } catch (err) {
     console.error(err);
-    renderPreEventsOverview(eventsEl, []);
+    renderPreEventsOverview(eventsEl, [], meetupData);
   }
 }
 

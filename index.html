@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="description" content="GECIAN Alumni Network — Connect with fellow graduates of Government Engineering College Idukki">
+  <meta name="description" content="GECIAN Alumni Network — LEGECI: The Legacy Continues. Connect with fellow graduates of Government Engineering College Idukki.">
   <title>GECIAN Alumni Network</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -26,7 +26,7 @@
       <ul class="nav__menu" id="navMenu">
         <li><a href="#home" class="nav__link">Home</a></li>
         <li><a href="#about" class="nav__link">About</a></li>
-        <li><a href="#meetup" class="nav__link">Meetup</a></li>
+        <li><a href="#meetup" class="nav__link">LEGECI</a></li>
         <li><a href="#register" class="nav__link">Register</a></li>
         <li><a href="#register" class="nav__link nav__link--cta">Join Now</a></li>
       </ul>
@@ -34,6 +34,17 @@
   </header>
 
   <main>
+    <div class="legeci-banner" id="legeciBanner">
+      <img
+        src="assets/legeci-logo.png"
+        alt="LEGECI — The Legacy Continues"
+        class="legeci-banner__img"
+        id="meetupBannerImg"
+      >
+      <h2 class="sr-only" id="meetupEventName">LEGECI</h2>
+      <p class="sr-only" id="meetupTagline">The Legacy Continues</p>
+    </div>
+
     <!-- Hero -->
     <section class="hero" id="home">
       <div class="hero__bg"></div>
@@ -42,10 +53,10 @@
           <img src="assets/geci-logo.png" alt="Government Engineering College Idukki" class="hero__logo hero__logo--geci">
           <img src="assets/silver-jubilee-logo.png" alt="GECI Silver Jubilee 25 Years" class="hero__logo hero__logo--jubilee">
         </div>
-        <p class="hero__badge">Silver Jubilee 2025 · Since 2000</p>
+        <p class="hero__badge">LEGECI · The Legacy Continues · Silver Jubilee 2025</p>
         <h1 class="hero__title">GECIAN Alumni Network</h1>
         <p class="hero__subtitle">
-          Reconnect with your batchmates as we celebrate the Silver Jubilee year — 25 years of excellence at GECI, with celebrations continuing throughout 2025.
+          Reconnect with your batchmates for <strong>LEGECI</strong> — The Legacy Continues, as GECI celebrates its Silver Jubilee year and 25 years of excellence since 2000.
         </p>
         <div class="hero__actions">
           <a href="#register" class="btn btn--primary">Register as Alumni</a>
@@ -86,24 +97,23 @@
           </article>
           <article class="feature-card">
             <div class="feature-card__icon">✨</div>
-            <h3>Silver Jubilee 2025</h3>
-            <p>2025 marks our Silver Jubilee year — 25 glorious years since 2000. Join the year-long celebrations and help build a stronger alumni community.</p>
+            <h3>LEGECI — The Legacy Continues</h3>
+            <p>2025 marks our Silver Jubilee year — 25 glorious years since 2000. Join LEGECI and help build a stronger alumni community.</p>
           </article>
         </div>
       </div>
     </section>
 
-    <!-- Mega Meetup -->
+    <!-- LEGECI -->
     <section class="meetup section" id="meetup">
       <div class="container">
         <div id="meetupSection" hidden>
-          <div class="section__header">
-            <span class="section__tag" style="background:rgba(255,255,255,0.15);color:var(--gold-400);">Mega Event</span>
-            <h2 class="section__title" style="color:var(--white);">Alumni Meetup 2026</h2>
+          <div class="section__header meetup__header">
+            <span class="section__tag" style="background:rgba(255,255,255,0.15);color:var(--gold-400);">Mega Alumni Meetup</span>
           </div>
           <div class="meetup__card">
             <p class="meetup__date" id="meetupDate">Saturday, 22 August 2026</p>
-            <h3 class="meetup__title" id="meetupTitle">Mega Alumni Meetup 2026</h3>
+            <h3 class="meetup__title" id="meetupTitle" hidden>LEGECI</h3>
             <p class="meetup__venue" id="meetupVenue">Government Engineering College Idukki</p>
             <p class="meetup__desc" id="meetupDesc"></p>
           </div>
@@ -112,7 +122,7 @@
         <div class="section__header" style="margin-top:3rem;">
           <span class="section__tag" style="background:rgba(255,255,255,0.15);color:var(--gold-400);">Programme</span>
           <h2 class="section__title" style="color:var(--white);">Pre-Events</h2>
-          <p class="section__desc" style="color:rgba(255,255,255,0.7);">Events leading up to the Mega Alumni Meetup on 22 August 2026.</p>
+          <p class="section__desc meetup__pre-events-desc" id="preEventsDesc" style="color:rgba(255,255,255,0.7);">Events leading up to LEGECI on 22 August 2026.</p>
         </div>
         <div class="events-timeline" id="eventsList">
           <p class="events-empty">Loading programme...</p>
@@ -133,7 +143,7 @@
             <ul class="register__benefits">
               <li>Join the official GECIAN alumni database</li>
               <li>Stay informed about college and alumni events</li>
-              <li>Be part of the Silver Jubilee 2025 celebrations</li>
+              <li>Be part of LEGECI — The Legacy Continues</li>
             </ul>
           </div>
           <form class="register__form" id="registerForm" novalidate>
@@ -207,7 +217,7 @@
         <img src="assets/silver-jubilee-logo.png" alt="GECI Silver Jubilee" class="footer__logo">
         <div>
           <p class="footer__name">Government Engineering College Idukki</p>
-          <p class="footer__tagline">GECIAN Alumni Network · Silver Jubilee 2025</p>
+          <p class="footer__tagline">GECIAN Alumni Network · LEGECI · Silver Jubilee 2025</p>
           <p class="footer__login"><a href="login.html">Institutional Login</a></p>
         </div>
       </div>

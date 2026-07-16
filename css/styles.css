@@ -189,6 +189,25 @@ a:hover {
   height: 72px;
 }
 
+/* LEGECI site banner */
+.legeci-banner {
+  margin-top: 72px;
+  width: 100%;
+  background: linear-gradient(180deg, #f3ece2 0%, #ebe3d6 100%);
+  padding: clamp(1rem, 3vw, 2rem) clamp(1rem, 4vw, 2.5rem);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  border-bottom: 1px solid var(--slate-200);
+}
+
+.legeci-banner__img {
+  display: block;
+  width: min(100%, 920px);
+  height: auto;
+  object-fit: contain;
+}
+
 .nav__brand {
   display: flex;
   align-items: center;
@@ -263,10 +282,10 @@ a:hover {
 /* Hero */
 .hero {
   position: relative;
-  min-height: 100vh;
+  min-height: auto;
   display: flex;
   align-items: center;
-  padding: 7rem 0 4rem;
+  padding: 4rem 0 4rem;
   overflow: hidden;
 }
 
@@ -773,6 +792,19 @@ a:hover {
   to {
     transform: rotate(360deg);
   }
+}
+
+/* ── Utilities ───────────────────────────────────────── */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 /* Responsive */

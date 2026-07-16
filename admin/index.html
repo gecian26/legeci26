@@ -22,7 +22,7 @@
       </div>
       <ul class="portal-nav">
         <li><button class="portal-nav__link portal-nav__link--active" data-panel="dashboard">Dashboard</button></li>
-        <li><button class="portal-nav__link" data-panel="meetup">Mega Meetup</button></li>
+        <li><button class="portal-nav__link" data-panel="meetup">LEGECI</button></li>
         <li><button class="portal-nav__link" data-panel="events">Pre-Events</button></li>
         <li><button class="portal-nav__link" data-panel="users">Coordinators</button></li>
         <li><button class="portal-nav__link" data-panel="volunteers">Volunteers</button></li>
@@ -56,19 +56,23 @@
           <div id="dashboardEvents" class="dashboard-meetup-wrap dashboard-meetup-wrap--bottom"></div>
         </div>
         <p class="form-hint" style="margin-top:1rem;">
-          Configure meetup and pre-event details from <strong>Mega Meetup</strong> and <strong>Pre-Events</strong> in the sidebar.
+          Configure LEGECI and pre-event details from <strong>LEGECI</strong> and <strong>Pre-Events</strong> in the sidebar.
         </p>
       </section>
 
-      <!-- Meetup Panel -->
+      <!-- LEGECI Panel -->
       <section class="portal-panel" id="panel-meetup">
         <div class="portal-card">
-          <h2 class="portal-card__title">Mega Alumni Meetup Configuration</h2>
-          <p class="form-hint" style="margin-bottom:1.25rem;">Configure the main meetup details shown on the public homepage.</p>
+          <h2 class="portal-card__title">LEGECI Configuration</h2>
+          <p class="form-hint" style="margin-bottom:1.25rem;">Configure the mega alumni meetup <strong>LEGECI</strong> — The Legacy Continues — shown on the public homepage.</p>
           <form id="meetupForm">
             <div class="form-group">
-              <label for="meetupTitle">Event Title</label>
-              <input type="text" id="meetupTitle" required placeholder="Mega Alumni Meetup 2026">
+              <label for="meetupTitle">Event Name</label>
+              <input type="text" id="meetupTitle" required placeholder="LEGECI">
+            </div>
+            <div class="form-group">
+              <label for="meetupTagline">Tagline</label>
+              <input type="text" id="meetupTagline" placeholder="The Legacy Continues">
             </div>
             <div class="form-row">
               <div class="form-group">
@@ -82,14 +86,14 @@
             </div>
             <div class="form-group">
               <label for="meetupDesc">Description</label>
-              <textarea id="meetupDesc" rows="4" style="width:100%;padding:0.75rem 1rem;font-family:var(--font-body);font-size:0.95rem;border:1.5px solid transparent;border-radius:10px;background:var(--slate-100);resize:vertical;" placeholder="Describe the mega meetup..."></textarea>
+              <textarea id="meetupDesc" rows="4" style="width:100%;padding:0.75rem 1rem;font-family:var(--font-body);font-size:0.95rem;border:1.5px solid transparent;border-radius:10px;background:var(--slate-100);resize:vertical;" placeholder="Describe LEGECI..."></textarea>
             </div>
             <label class="checkbox-label">
               <input type="checkbox" id="meetupPublished" checked>
               Publish on public site
             </label>
             <div style="margin-top:1.25rem;">
-              <button type="submit" class="btn btn--primary">Save Meetup Details</button>
+              <button type="submit" class="btn btn--primary">Save LEGECI Details</button>
             </div>
           </form>
         </div>

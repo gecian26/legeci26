@@ -7,10 +7,11 @@ import {
   query,
   orderBy,
 } from "https://www.gstatic.com/firebasejs/11.6.0/firebase-firestore.js";
-import { formatDate, formatDateShort, escapeHtml, DEFAULT_MEETUP } from "./constants.js";
+import { formatDate, formatDateShort, escapeHtml, DEFAULT_MEETUP, MEETUP_NAME, MEETUP_TAGLINE } from "./constants.js";
 
 export async function loadPublicMeetup() {
   const section = document.getElementById("meetupSection");
+  const banner = document.getElementById("legeciBanner");
   if (!section) return;
 
   let m = { ...DEFAULT_MEETUP };
@@ -20,18 +21,37 @@ export async function loadPublicMeetup() {
     if (snap.exists()) {
       if (snap.data().published === false) {
         section.hidden = true;
+        if (banner) banner.hidden = true;
         return;
       }
-      m = snap.data();
+      m = { ...DEFAULT_MEETUP, ...snap.data() };
     }
   } catch {
     // Use default meetup details when settings are unavailable
   }
 
-  document.getElementById("meetupTitle").textContent = m.title || DEFAULT_MEETUP.title;
-  document.getElementById("meetupDate").textContent = formatDate(m.date || DEFAULT_MEETUP.date);
+  const eventName = m.title || MEETUP_NAME;
+  const tagline = m.tagline || MEETUP_TAGLINE;
+  const meetupDate = m.date || DEFAULT_MEETUP.date;
+
+  const eventNameEl = document.getElementById("meetupEventName");
+  const taglineEl = document.getElementById("meetupTagline");
+  const bannerImg = document.getElementById("meetupBannerImg");
+
+  if (eventNameEl) eventNameEl.textContent = eventName;
+  if (taglineEl) taglineEl.textContent = tagline;
+  if (bannerImg) bannerImg.alt = `${eventName} — ${tagline}`;
+
+  document.getElementById("meetupDate").textContent = formatDate(meetupDate);
   document.getElementById("meetupVenue").textContent = m.venue || DEFAULT_MEETUP.venue;
   document.getElementById("meetupDesc").textContent = m.description || DEFAULT_MEETUP.description;
+
+  const preEventsDesc = document.getElementById("preEventsDesc");
+  if (preEventsDesc) {
+    preEventsDesc.textContent = `Events leading up to ${eventName} on ${formatDateShort(meetupDate)}.`;
+  }
+
+  if (banner) banner.hidden = false;
   section.hidden = false;
 }
 

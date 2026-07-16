@@ -48,12 +48,16 @@ export function normalizeUsername(username) {
   return username.trim().toLowerCase().replace(/@/g, "_at_").replace(/\./g, "_");
 }
 
+export const MEETUP_NAME = "LEGECI";
+export const MEETUP_TAGLINE = "The Legacy Continues";
+
 export const DEFAULT_MEETUP = {
-  title: "Mega Alumni Meetup 2026",
+  title: MEETUP_NAME,
+  tagline: MEETUP_TAGLINE,
   date: "2026-08-22",
   venue: "Government Engineering College Idukki",
   description:
-    "Join us for the grand Mega Alumni Meetup as GECI celebrates its Silver Jubilee. Reconnect with batchmates, faculty, and the entire GECIAN family on this special day.",
+    "Join us for LEGECI — The Legacy Continues. As GECI celebrates its Silver Jubilee, reconnect with batchmates, faculty, and the entire GECIAN family on this special day.",
   published: true,
 };
 

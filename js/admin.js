@@ -101,7 +101,7 @@ function setupAccount(session) {
 function setupNavigation() {
   const titles = {
     dashboard: "Dashboard",
-    meetup: "Mega Meetup",
+    meetup: "LEGECI",
     events: "Pre-Events",
     users: "Coordinators",
     volunteers: "Volunteers",
@@ -148,10 +148,12 @@ async function ensureAdminSession() {
 async function loadDashboard() {
   const meetupEl = document.getElementById("dashboardMeetup");
   const eventsEl = document.getElementById("dashboardEvents");
+  let meetupData = DEFAULT_MEETUP;
 
   try {
     const snap = await getDoc(doc(db, "settings", "meetup"));
-    renderMeetupOverview(meetupEl, snap.exists() ? snap.data() : DEFAULT_MEETUP);
+    meetupData = snap.exists() ? { ...DEFAULT_MEETUP, ...snap.data() } : DEFAULT_MEETUP;
+    renderMeetupOverview(meetupEl, meetupData);
   } catch (err) {
     console.error(err);
     renderMeetupOverview(meetupEl, DEFAULT_MEETUP);
@@ -161,10 +163,10 @@ async function loadDashboard() {
     const q = query(collection(db, "pre_events"), orderBy("date", "asc"));
     const snap = await getDocs(q);
     const events = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-    renderPreEventsOverview(eventsEl, events);
+    renderPreEventsOverview(eventsEl, events, meetupData);
   } catch (err) {
     console.error(err);
-    renderPreEventsOverview(eventsEl, []);
+    renderPreEventsOverview(eventsEl, [], meetupData);
   }
 }
 
@@ -177,12 +179,14 @@ async function setupMeetup() {
     if (snap.exists()) {
       const data = snap.data();
       document.getElementById("meetupTitle").value = data.title || "";
+      document.getElementById("meetupTagline").value = data.tagline || "";
       document.getElementById("meetupDate").value = data.date || "";
       document.getElementById("meetupVenue").value = data.venue || "";
       document.getElementById("meetupDesc").value = data.description || "";
       document.getElementById("meetupPublished").checked = data.published !== false;
     } else {
       document.getElementById("meetupTitle").value = DEFAULT_MEETUP.title;
+      document.getElementById("meetupTagline").value = DEFAULT_MEETUP.tagline;
       document.getElementById("meetupDate").value = DEFAULT_MEETUP.date;
       document.getElementById("meetupVenue").value = DEFAULT_MEETUP.venue;
       document.getElementById("meetupDesc").value = DEFAULT_MEETUP.description;
@@ -191,6 +195,7 @@ async function setupMeetup() {
   } catch (err) {
     console.error(err);
     document.getElementById("meetupTitle").value = DEFAULT_MEETUP.title;
+    document.getElementById("meetupTagline").value = DEFAULT_MEETUP.tagline;
     document.getElementById("meetupDate").value = DEFAULT_MEETUP.date;
     document.getElementById("meetupVenue").value = DEFAULT_MEETUP.venue;
     document.getElementById("meetupDesc").value = DEFAULT_MEETUP.description;
@@ -204,19 +209,20 @@ async function setupMeetup() {
     try {
       await setDoc(doc(db, "settings", "meetup"), withSession({
         title: document.getElementById("meetupTitle").value.trim(),
+        tagline: document.getElementById("meetupTagline").value.trim(),
         date: document.getElementById("meetupDate").value,
         venue: document.getElementById("meetupVenue").value.trim(),
         description: document.getElementById("meetupDesc").value.trim(),
         published: document.getElementById("meetupPublished").checked,
         updatedAt: serverTimestamp(),
       }));
-      showToast(toast, "Meetup details saved.", "success");
+      showToast(toast, "LEGECI details saved.", "success");
       loadDashboard();
     } catch (err) {
       console.error(err);
       const msg = err.code === "permission-denied"
         ? "Permission denied. Republish firestore.rules in Firebase Console, then sign out and sign in again."
-        : "Failed to save meetup details.";
+        : "Failed to save LEGECI details.";
       showToast(toast, msg, "error");
     }
   });

@@ -320,6 +320,14 @@
   color: var(--white);
 }
 
+.meetup__header {
+  margin-bottom: 1.5rem;
+}
+
+.meetup__header .section__title {
+  color: var(--white);
+}
+
 .meetup__card {
   background: rgba(255, 255, 255, 0.08);
   border: 1px solid rgba(255, 255, 255, 0.15);
@@ -585,13 +593,35 @@
 .dash-programme__inner {
   position: relative;
   z-index: 1;
-  padding: 2.75rem 1.75rem 3rem;
+  padding: 0 1.75rem 3rem;
   max-width: 860px;
   margin: 0 auto;
 }
 
+.dash-event__banner {
+  width: calc(100% + 3.5rem);
+  margin: 0 -1.75rem 1.75rem;
+  padding: clamp(1rem, 3vw, 1.75rem) clamp(0.75rem, 2vw, 1.25rem);
+  background: linear-gradient(180deg, #f3ece2 0%, #ebe3d6 100%);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.dash-event__banner-img {
+  display: block;
+  width: min(100%, 760px);
+  height: auto;
+  object-fit: contain;
+}
+
 .dash-programme {
   border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.dash-programme__inner {
+  padding-top: 2.75rem;
 }
 
 .dash-event__logos {
@@ -645,6 +675,16 @@
   color: var(--white);
   line-height: 1.2;
   margin-bottom: 0.5rem;
+  letter-spacing: 0.1em;
+}
+
+.dash-event__tagline {
+  font-size: 0.95rem;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.78);
+  margin: 0 auto 0.25rem;
+  max-width: 520px;
 }
 
 .dash-event__sub {
@@ -797,7 +837,17 @@
 @media (max-width: 640px) {
   .dash-event__inner,
   .dash-programme__inner {
-    padding: 2rem 1.15rem 2.25rem;
+    padding: 0 1.15rem 2.25rem;
+  }
+
+  .dash-programme__inner {
+    padding-top: 2rem;
+  }
+
+  .dash-event__banner {
+    width: calc(100% + 2.3rem);
+    margin-left: -1.15rem;
+    margin-right: -1.15rem;
   }
 
   .dash-event-card {
