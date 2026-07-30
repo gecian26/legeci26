@@ -6,7 +6,7 @@ import {
   deleteDoc,
   serverTimestamp,
   Timestamp,
-} from "https://www.gstatic.com/firebasejs/11.6.0/firebase-firestore.js";
+} from "https://www.gstatic.com/firebasejs/12.16.0/firebase-firestore.js";
 import { hashPassword, verifyPassword } from "./crypto.js";
 import {
   ADMIN_USERNAME,
@@ -143,6 +143,10 @@ export async function validateSession() {
 
     let mustChangePassword =
       session.mustChangePassword === true || data.mustChangePassword === true;
+    let department = data.department || session.department || "";
+    let team = data.team || session.team || "";
+    let displayName = data.displayName || session.displayName;
+    let role = data.role || session.role;
 
     try {
       const userSnap = await getDoc(
@@ -152,16 +156,21 @@ export async function validateSession() {
         const user = userSnap.data();
         mustChangePassword =
           user.mustChangePassword === true || !user.passwordChangedAt;
+        department = user.department || department;
+        team = user.team || team;
+        displayName = user.displayName || displayName;
+        role = user.role || role;
       }
     } catch {
-      // Keep session-derived flag if user lookup fails
+      // Keep session-derived values if user lookup fails
     }
 
     return {
       ...session,
-      role: data.role,
-      displayName: data.displayName,
-      department: data.department,
+      role,
+      displayName,
+      department,
+      team,
       mustChangePassword,
     };
   } catch {

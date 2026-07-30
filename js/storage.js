@@ -4,7 +4,7 @@ import {
   uploadBytes,
   getDownloadURL,
   deleteObject,
-} from "https://www.gstatic.com/firebasejs/11.6.0/firebase-storage.js";
+} from "https://www.gstatic.com/firebasejs/12.16.0/firebase-storage.js";
 import { getSession } from "./auth.js";
 
 const MAX_SIZE = 5 * 1024 * 1024; // 5 MB

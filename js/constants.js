@@ -38,6 +38,52 @@ export const REGISTRY_DOC = "_registry";
 export const TEAMS_DOC = "teams";
 export const MAIN_TASKS_COLLECTION = "main_tasks";
 export const DEPT_TASKS_COLLECTION = "dept_tasks";
+/** Firestore collection for Alumni Connect contact records */
+export const ALUMNI_CONTACTS_COLLECTION = "alumni_contacts";
+/** settings/{REGISTRATION_SETTINGS_DOC} — LEGECI registration fee */
+export const REGISTRATION_SETTINGS_DOC = "registration";
+
+export const TASK_TYPES = {
+  GENERAL: "general",
+  ALUMNI_CONNECT: "alumni_connect",
+};
+
+export const TASK_TYPE_LABELS = {
+  [TASK_TYPES.GENERAL]: "General",
+  [TASK_TYPES.ALUMNI_CONNECT]: "Alumni Connect",
+};
+
+export const WILLINGNESS_OPTIONS = [
+  { value: "willing", label: "Willing to attend" },
+  { value: "not_willing", label: "Not willing" },
+  { value: "undecided", label: "Undecided" },
+  { value: "no_response", label: "Contacted — no response" },
+];
+
+export const REGISTRATION_OPTIONS = [
+  { value: "not_registered", label: "Not registered" },
+  { value: "pending_payment", label: "Registered — payment pending" },
+  { value: "paid", label: "Registered — paid" },
+  { value: "waived", label: "Registered — fee waived" },
+];
+
+export const JOB_SECTORS = [
+  "IT / Software",
+  "Core Engineering",
+  "Electronics / Embedded",
+  "Academia / Research",
+  "Government / PSU",
+  "Entrepreneurship / Startup",
+  "Finance / Consulting",
+  "Healthcare / Biotech",
+  "Other",
+];
+
+export const DEFAULT_REGISTRATION = {
+  feeAmount: 0,
+  feeCurrency: "INR",
+  feeNote: "LEGECI event registration fee",
+};
 
 export const DEFAULT_TEAMS = [
   { id: "media", name: "Media team", active: true },

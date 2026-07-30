@@ -10,7 +10,7 @@ import {
   query,
   orderBy,
   serverTimestamp,
-} from "https://www.gstatic.com/firebasejs/11.6.0/firebase-firestore.js";
+} from "https://www.gstatic.com/firebasejs/12.16.0/firebase-firestore.js";
 import { hashPassword } from "../js/crypto.js";
 import { uploadImages, deleteImage } from "../js/storage.js";
 import {
@@ -29,11 +29,30 @@ import {
   REGISTRY_DOC,
   MAIN_TASKS_COLLECTION,
   TEAMS_DOC,
+  TASK_TYPES,
+  TASK_TYPE_LABELS,
   normalizeUsername,
   formatDateShort,
   escapeHtml,
   showToast,
 } from "../js/constants.js";
+import {
+  loadRegistrationSettings,
+  saveRegistrationSettings,
+  loadAllAlumniContacts,
+  summarizeContacts,
+  filterAlumniContacts,
+  uniqueSortedValues,
+  departmentBreakdown,
+  statsCardsHtml,
+  alumniFiltersHtml,
+  readAlumniFilters,
+  departmentBreakdownTableHtml,
+  insightsHtml,
+  formatFee,
+  labelWillingness,
+  labelRegistration,
+} from "../js/alumni-connect.js";
 import {
   setupPasswordPanel,
   passwordFormHtml,
@@ -59,6 +78,8 @@ const toast = document.getElementById("toast");
 let editingEventId = null;
 let eventPhotos = [];
 let cachedTeams = [];
+let cachedAdminAlumniContacts = [];
+let adminAlumniFilterBound = false;
 
 initAuthGuard([ROLES.ADMIN], (session) => {
   initPortal(session);
@@ -74,6 +95,7 @@ function initPortal(session) {
   setupTeams();
   setupVolunteers();
   setupMainTasks();
+  setupAlumniConnectDashboard();
   setupAccount(session);
   document.getElementById("logoutBtn").addEventListener("click", async () => {
     await logout();
@@ -107,6 +129,7 @@ function setupNavigation() {
     volunteers: "Volunteers",
     teams: "Teams",
     tasks: "Tasks",
+    alumni: "Alumni Connect",
     account: "Account",
   };
 
@@ -119,6 +142,9 @@ function setupNavigation() {
       document.getElementById(`panel-${panel}`).classList.add("portal-panel--active");
       document.getElementById("pageTitle").textContent = titles[panel];
       document.getElementById("sidebar").classList.remove("portal-sidebar--open");
+      if (panel === "alumni") {
+        loadAdminAlumniDashboard();
+      }
     });
   });
 
@@ -202,6 +228,14 @@ async function setupMeetup() {
     document.getElementById("meetupPublished").checked = DEFAULT_MEETUP.published;
   }
 
+  try {
+    const reg = await loadRegistrationSettings();
+    document.getElementById("registrationFee").value = reg.feeAmount || "";
+    document.getElementById("registrationFeeNote").value = reg.feeNote || "";
+  } catch (err) {
+    console.error(err);
+  }
+
   form.addEventListener("submit", async (e) => {
     e.preventDefault();
     if (!(await ensureAdminSession())) return;
@@ -216,6 +250,11 @@ async function setupMeetup() {
         published: document.getElementById("meetupPublished").checked,
         updatedAt: serverTimestamp(),
       }));
+      await saveRegistrationSettings({
+        feeAmount: document.getElementById("registrationFee").value,
+        feeNote: document.getElementById("registrationFeeNote").value,
+        feeCurrency: "INR",
+      });
       showToast(toast, "LEGECI details saved.", "success");
       loadDashboard();
     } catch (err) {
@@ -873,7 +912,46 @@ async function loadVolunteersTable() {
   try {
     const teams = await loadTeams();
     const deptOrder = DEPARTMENTS.map((d) => d.value);
-    const volunteers = (await getRegistry())
+    let registry = await getRegistry();
+    let registryDirty = false;
+
+    // Keep registry department/team/role in sync with live user docs
+    for (let i = 0; i < registry.length; i++) {
+      const entry = registry[i];
+      if (!entry.userId || entry.role !== ROLES.STUDENT) continue;
+      try {
+        const snap = await getDoc(doc(db, USERS_COLLECTION, entry.userId));
+        if (!snap.exists()) continue;
+        const user = snap.data();
+        const next = {
+          ...entry,
+          displayName: user.displayName || entry.displayName,
+          username: user.username || entry.username,
+          role: user.role || entry.role,
+          department: user.department || entry.department || "",
+          team: user.team || entry.team || "",
+          mobile: user.mobile || entry.mobile || "",
+          active: user.active !== false,
+        };
+        if (
+          next.department !== entry.department ||
+          next.team !== entry.team ||
+          next.active !== entry.active ||
+          next.displayName !== entry.displayName
+        ) {
+          registry[i] = next;
+          registryDirty = true;
+        }
+      } catch {
+        // Skip if a user doc cannot be read
+      }
+    }
+
+    if (registryDirty) {
+      await saveRegistry(registry);
+    }
+
+    const volunteers = registry
       .filter((u) => u.role === ROLES.STUDENT)
       .sort((a, b) => {
         const deptCmp =
@@ -948,6 +1026,7 @@ function setupMainTasks() {
     const description = document.getElementById("taskDescription").value.trim();
     const dueDate = document.getElementById("taskDueDate").value;
     const status = document.getElementById("taskStatus").value;
+    const taskType = document.getElementById("taskType").value || TASK_TYPES.GENERAL;
     const teams = getSelectedTaskTeams();
 
     try {
@@ -956,6 +1035,7 @@ function setupMainTasks() {
         description,
         dueDate,
         status,
+        taskType,
         teams,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
@@ -989,7 +1069,7 @@ async function loadMainTasksTable() {
 
     wrap.innerHTML = `
       <table class="data-table">
-        <thead><tr><th>Title</th><th>Teams</th><th>Due</th><th>Status</th><th>Actions</th></tr></thead>
+        <thead><tr><th>Title</th><th>Type</th><th>Teams</th><th>Due</th><th>Status</th><th>Actions</th></tr></thead>
         <tbody>
           ${tasks
             .map(
@@ -999,6 +1079,7 @@ async function loadMainTasksTable() {
                 <strong>${escapeHtml(t.title)}</strong>
                 ${t.description ? `<br><small style="color:var(--slate-500)">${escapeHtml(t.description)}</small>` : ""}
               </td>
+              <td><span class="badge badge--role">${escapeHtml(TASK_TYPE_LABELS[t.taskType] || TASK_TYPE_LABELS[TASK_TYPES.GENERAL])}</span></td>
               <td>${escapeHtml(formatTaskTeamList(teams, t.teams))}</td>
               <td>${escapeHtml(formatDateShort(t.dueDate) || "—")}</td>
               <td><span class="badge badge--role">${escapeHtml(t.status || "open")}</span></td>
@@ -1027,4 +1108,169 @@ async function loadMainTasksTable() {
     console.error(err);
     wrap.innerHTML = '<p class="empty-state">Failed to load tasks.</p>';
   }
+}
+
+// ── Alumni Connect consolidated dashboard ─────────────
+function setupAlumniConnectDashboard() {
+  // Loaded on-demand when the Alumni Connect nav panel is opened.
+}
+
+async function loadAdminAlumniDashboard() {
+  const wrap = document.getElementById("adminAlumniConnectWrap");
+  if (!wrap) return;
+  wrap.innerHTML = '<p class="empty-state">Loading...</p>';
+  try {
+    const [contacts, regSettings] = await Promise.all([
+      loadAllAlumniContacts(),
+      loadRegistrationSettings(),
+    ]);
+    cachedAdminAlumniContacts = contacts;
+    renderAdminAlumniDashboard(regSettings);
+  } catch (err) {
+    console.error(err);
+    wrap.innerHTML = '<p class="empty-state">Failed to load Alumni Connect data.</p>';
+  }
+}
+
+function renderAdminAlumniDashboard(regSettings) {
+  const wrap = document.getElementById("adminAlumniConnectWrap");
+  if (!wrap) return;
+
+  const contacts = cachedAdminAlumniContacts || [];
+  const batches = uniqueSortedValues(contacts, (c) => c.batch || c.passoutYear);
+  const sectors = uniqueSortedValues(contacts, (c) => c.jobSector);
+  const feeLabel = formatFee(regSettings);
+
+  wrap.innerHTML = `
+    <div class="ac-dashboard">
+      <p class="form-hint" style="margin:0;">Registration fee: <strong>${escapeHtml(feeLabel)}</strong>${
+        regSettings?.feeNote ? ` — ${escapeHtml(regSettings.feeNote)}` : ""
+      }</p>
+      <div id="admAcOverallStats"></div>
+      <div id="admAcInsights"></div>
+      <div>
+        <h3 class="ac-dashboard__subtitle">Department-wise status</h3>
+        <div id="admAcDeptTable"></div>
+      </div>
+      ${alumniFiltersHtml("admAc", {
+        showDepartment: true,
+        departments: DEPARTMENTS,
+        batches,
+        sectors,
+      })}
+      <div>
+        <h3 class="ac-dashboard__subtitle">Filtered contacts</h3>
+        <p class="ac-results-meta" id="admAcMeta"></p>
+        <div id="admAcFilteredStats"></div>
+        <div id="admAcTable" class="table-scroll" style="margin-top:1rem;"></div>
+      </div>
+    </div>`;
+
+  if (!adminAlumniFilterBound) {
+    adminAlumniFilterBound = true;
+    wrap.addEventListener("click", (e) => {
+      if (e.target.id === "admAcApplyFilters") {
+        applyAdminAlumniFilters();
+      } else if (e.target.id === "admAcResetFilters") {
+        [
+          "admAcSearch",
+          "admAcDepartment",
+          "admAcWillingness",
+          "admAcRegistration",
+          "admAcBatch",
+          "admAcSector",
+        ].forEach((id) => {
+          const el = document.getElementById(id);
+          if (el) el.value = "";
+        });
+        applyAdminAlumniFilters();
+      }
+    });
+    wrap.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && e.target.closest("#admAcFilters")) {
+        e.preventDefault();
+        applyAdminAlumniFilters();
+      }
+    });
+  }
+
+  applyAdminAlumniFilters();
+}
+
+function applyAdminAlumniFilters() {
+  const filters = readAlumniFilters("admAc", { showDepartment: true });
+  const all = cachedAdminAlumniContacts || [];
+  const filtered = filterAlumniContacts(all, filters);
+  const overallStats = summarizeContacts(all);
+  const filteredStats = summarizeContacts(filtered);
+  const deptRowsAll = departmentBreakdown(all, DEPARTMENTS);
+
+  const overallEl = document.getElementById("admAcOverallStats");
+  const insightsEl = document.getElementById("admAcInsights");
+  const deptEl = document.getElementById("admAcDeptTable");
+  const filteredStatsEl = document.getElementById("admAcFilteredStats");
+  const metaEl = document.getElementById("admAcMeta");
+  const tableEl = document.getElementById("admAcTable");
+  if (!overallEl || !tableEl) return;
+
+  overallEl.innerHTML = statsCardsHtml(overallStats, { title: "Institution summary" });
+  if (insightsEl) insightsEl.innerHTML = insightsHtml(overallStats, deptRowsAll);
+  if (deptEl) deptEl.innerHTML = departmentBreakdownTableHtml(deptRowsAll);
+
+  const hasActiveFilter = Object.values(filters).some((v) => v);
+  if (filteredStatsEl) {
+    filteredStatsEl.innerHTML = hasActiveFilter
+      ? statsCardsHtml(filteredStats, { title: "Filtered summary" })
+      : "";
+  }
+  if (metaEl) {
+    metaEl.textContent = `Showing ${filtered.length} of ${all.length} contacts`;
+  }
+
+  // Admin detail table: include department column via showVolunteer + custom? 
+  // contactsTableHtml doesn't show department — enhance with a simple wrapper.
+  tableEl.innerHTML = adminContactsTableHtml(filtered);
+}
+
+function adminContactsTableHtml(contacts) {
+  if (!contacts.length) {
+    return '<p class="empty-state">No alumni contacts match the current filters.</p>';
+  }
+  const deptLabel = (code) =>
+    DEPARTMENTS.find((d) => d.value === code)?.label || code || "—";
+
+  return `
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Department</th>
+          <th>Alumni</th>
+          <th>WhatsApp</th>
+          <th>Passout</th>
+          <th>Willingness</th>
+          <th>Registration</th>
+          <th>Volunteer</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${contacts
+          .map(
+            (c) => `
+          <tr>
+            <td>${escapeHtml(deptLabel(c.department))}</td>
+            <td>
+              <strong>${escapeHtml(c.alumniName)}</strong>
+              ${c.email ? `<br><small style="color:var(--slate-500)">${escapeHtml(c.email)}</small>` : ""}
+              ${c.company ? `<br><small style="color:var(--slate-500)">${escapeHtml(c.company)}</small>` : ""}
+            </td>
+            <td>${escapeHtml(c.whatsapp || "—")}</td>
+            <td>${escapeHtml(c.batch || c.passoutYear || "—")}</td>
+            <td><span class="badge badge--role">${escapeHtml(labelWillingness(c.willingness))}</span></td>
+            <td><span class="badge badge--role">${escapeHtml(labelRegistration(c.registrationStatus))}</span></td>
+            <td>${escapeHtml(c.createdByName || c.createdByUserId || "—")}</td>
+          </tr>`
+          )
+          .join("")}
+      </tbody>
+    </table>`;
 }

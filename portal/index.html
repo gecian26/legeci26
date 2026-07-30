@@ -23,6 +23,8 @@
       <ul class="portal-nav">
         <li><button class="portal-nav__link portal-nav__link--active" data-panel="dashboard">Dashboard</button></li>
         <li><button class="portal-nav__link" data-panel="dept" id="navDept" hidden>Department Work</button></li>
+        <li><button class="portal-nav__link" data-panel="alumni" id="navAlumni" hidden>Alumni Connect</button></li>
+        <li><button class="portal-nav__link" data-panel="mytasks" id="navMyTasks" hidden>My Tasks</button></li>
         <li><button class="portal-nav__link" data-panel="account">Account</button></li>
       </ul>
       <div class="portal-sidebar__footer">
@@ -60,8 +62,35 @@
 
       <section class="portal-panel" id="panel-dept">
         <div class="portal-card">
-          <h2 class="portal-card__title">Department Volunteers — <span id="deptNameLabel"></span></h2>
-          <p class="form-hint" style="margin-bottom:1rem;">Volunteers in your department, grouped by team. Task progress monitoring will expand in the next phase.</p>
+          <h2 class="portal-card__title">Add Volunteer — <span id="deptNameLabel"></span></h2>
+          <p class="form-hint" style="margin-bottom:1rem;">
+            Create student volunteers for your department only.
+            <strong>Mobile</strong> is used as both username and temporary password; they must change it after first login.
+          </p>
+          <form id="deptVolunteerForm">
+            <div class="form-row">
+              <div class="form-group">
+                <label for="volFullName">Full Name <span class="required">*</span></label>
+                <input type="text" id="volFullName" required placeholder="Volunteer name">
+              </div>
+              <div class="form-group">
+                <label for="volMobile">Mobile <span class="required">*</span></label>
+                <input type="tel" id="volMobile" required placeholder="10–15 digits" pattern="[0-9]{10,15}">
+              </div>
+            </div>
+            <div class="form-group">
+              <label for="volTeam">Team <span class="required">*</span></label>
+              <select id="volTeam" required>
+                <option value="">Select team</option>
+              </select>
+            </div>
+            <button type="submit" class="btn btn--primary">Create Volunteer</button>
+          </form>
+        </div>
+
+        <div class="portal-card">
+          <h2 class="portal-card__title">Department Volunteers</h2>
+          <p class="form-hint" style="margin-bottom:1rem;">All student volunteers in your department. You can activate or deactivate them here. Team changes are managed by admin.</p>
           <div id="deptVolunteersWrap"><p class="empty-state">Loading...</p></div>
         </div>
 
@@ -72,8 +101,51 @@
         </div>
 
         <div class="portal-card">
-          <h2 class="portal-card__title">Department Tasks</h2>
+          <h2 class="portal-card__title">Department Tasks — Assign Volunteers</h2>
+          <p class="form-hint" style="margin-bottom:1rem;">Assign department volunteers to replicated tasks and update status.</p>
           <div id="deptTasksWrap"><p class="empty-state">Loading...</p></div>
+        </div>
+      </section>
+
+      <section class="portal-panel" id="panel-alumni">
+        <div class="portal-card">
+          <h2 class="portal-card__title">Alumni Connect — Department Dashboard</h2>
+          <p class="form-hint" style="margin-bottom:1rem;">
+            Summary and filtered details of alumni contacted by volunteers in your department.
+          </p>
+          <div id="deptAlumniContactsWrap"><p class="empty-state">Loading...</p></div>
+        </div>
+      </section>
+
+      <section class="portal-panel" id="panel-mytasks">
+        <div class="portal-card">
+          <h2 class="portal-card__title">My Assigned Tasks</h2>
+          <p class="form-hint" style="margin-bottom:1rem;">
+            Tasks assigned to you by your faculty coordinator. Use Alumni Connect to record alumni you contacted.
+          </p>
+          <div id="myTasksWrap"><p class="empty-state">Loading...</p></div>
+        </div>
+        <div class="portal-card" id="alumniConnectCard" hidden>
+          <h2 class="portal-card__title" id="alumniConnectTitle">Record Alumni Contact</h2>
+          <p class="form-hint" style="margin-bottom:1rem;" id="alumniConnectHint">
+            Enter details of each alumnus you contacted for LEGECI.
+          </p>
+          <form id="alumniContactForm">
+            <input type="hidden" id="acDeptTaskId" value="">
+            <input type="hidden" id="acContactId" value="">
+            <div id="alumniContactFormFields"></div>
+            <div style="display:flex;gap:0.75rem;flex-wrap:wrap;margin-top:0.75rem;">
+              <button type="submit" class="btn btn--primary" id="alumniContactSubmitBtn">Save Contact</button>
+              <button type="button" class="btn btn--ghost" id="alumniContactCancelBtn" hidden>Cancel Edit</button>
+            </div>
+          </form>
+        </div>
+        <div class="portal-card">
+          <h2 class="portal-card__title">My Recorded Contacts</h2>
+          <p class="form-hint" style="margin-bottom:1rem;">
+            Change <strong>Willingness</strong> or <strong>Registration</strong> from the dropdowns, or use the pencil icon beside a name to edit full details.
+          </p>
+          <div id="myContactsWrap"><p class="empty-state">No contacts yet.</p></div>
         </div>
       </section>
 

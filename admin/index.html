@@ -28,6 +28,7 @@
         <li><button class="portal-nav__link" data-panel="volunteers">Volunteers</button></li>
         <li><button class="portal-nav__link" data-panel="teams">Teams</button></li>
         <li><button class="portal-nav__link" data-panel="tasks">Tasks</button></li>
+        <li><button class="portal-nav__link" data-panel="alumni">Alumni Connect</button></li>
         <li><button class="portal-nav__link" data-panel="account">Account</button></li>
       </ul>
       <div class="portal-sidebar__footer">
@@ -73,6 +74,17 @@
             <div class="form-group">
               <label for="meetupTagline">Tagline</label>
               <input type="text" id="meetupTagline" placeholder="The Legacy Continues">
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label for="registrationFee">Registration Fee (₹)</label>
+                <input type="number" id="registrationFee" min="0" step="1" placeholder="e.g. 500">
+                <p class="form-hint">Used in Alumni Connect registration status tracking.</p>
+              </div>
+              <div class="form-group">
+                <label for="registrationFeeNote">Fee Note</label>
+                <input type="text" id="registrationFeeNote" placeholder="LEGECI event registration fee">
+              </div>
             </div>
             <div class="form-row">
               <div class="form-group">
@@ -289,11 +301,21 @@
           <form id="mainTaskForm">
             <div class="form-group">
               <label for="taskTitle">Task Title <span class="required">*</span></label>
-              <input type="text" id="taskTitle" required placeholder="e.g. Collect alumni contact list">
+              <input type="text" id="taskTitle" required placeholder="e.g. Alumni Connect">
+            </div>
+            <div class="form-group">
+              <label for="taskType">Task Type</label>
+              <select id="taskType">
+                <option value="general">General</option>
+                <option value="alumni_connect">Alumni Connect</option>
+              </select>
+              <p class="form-hint">
+                <strong>Alumni Connect</strong> lets student volunteers record alumni contacted (willingness + registration/payment status).
+              </p>
             </div>
             <div class="form-group">
               <label for="taskDescription">Description</label>
-              <textarea id="taskDescription" rows="3" style="width:100%;padding:0.75rem 1rem;font-family:var(--font-body);font-size:0.95rem;border:1.5px solid transparent;border-radius:10px;background:var(--slate-100);resize:vertical;"></textarea>
+              <textarea id="taskDescription" rows="3" style="width:100%;padding:0.75rem 1rem;font-family:var(--font-body);font-size:0.95rem;border:1.5px solid transparent;border-radius:10px;background:var(--slate-100);resize:vertical;" placeholder="Connect with alumni, record willingness and registration status."></textarea>
             </div>
             <div class="form-row">
               <div class="form-group">
@@ -324,6 +346,17 @@
         <div class="portal-card">
           <h2 class="portal-card__title">Main Tasks</h2>
           <div id="mainTasksTableWrap"><p class="empty-state">Loading tasks...</p></div>
+        </div>
+      </section>
+
+      <!-- Alumni Connect consolidated dashboard -->
+      <section class="portal-panel" id="panel-alumni">
+        <div class="portal-card">
+          <h2 class="portal-card__title">Alumni Connect — Institution Overview</h2>
+          <p class="form-hint" style="margin-bottom:1rem;">
+            Consolidated department-wise status, insights, and filtered contact details.
+          </p>
+          <div id="adminAlumniConnectWrap"><p class="empty-state">Loading...</p></div>
         </div>
       </section>
 

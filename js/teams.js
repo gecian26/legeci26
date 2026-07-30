@@ -4,7 +4,7 @@ import {
   getDoc,
   setDoc,
   serverTimestamp,
-} from "https://www.gstatic.com/firebasejs/11.6.0/firebase-firestore.js";
+} from "https://www.gstatic.com/firebasejs/12.16.0/firebase-firestore.js";
 import { withSession } from "./auth.js";
 import { TEAMS_DOC, DEFAULT_TEAMS } from "./constants.js";
 

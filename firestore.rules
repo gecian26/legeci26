@@ -17,8 +17,13 @@ service cloud.firestore {
         && get(sessionPath(sessionId)).data.role == 'admin';
     }
 
-    function isInstitutionalSession(sessionId) {
-      return isValidSession(sessionId);
+    function isFacultySession(sessionId) {
+      return isValidSession(sessionId)
+        && get(sessionPath(sessionId)).data.role == 'faculty_coordinator';
+    }
+
+    function facultyDepartment(sessionId) {
+      return get(sessionPath(sessionId)).data.department;
     }
 
     function isSelfPasswordUpdate(userId) {
@@ -26,6 +31,21 @@ service cloud.firestore {
         && get(sessionPath(request.resource.data._sessionId)).data.userId == userId
         && request.resource.data.diff(resource.data).affectedKeys()
             .hasOnly(['passwordHash', 'salt', 'mustChangePassword', 'passwordChangedAt', 'updatedAt', '_sessionId']);
+    }
+
+    function isFacultyVolunteerCreate() {
+      return isFacultySession(request.resource.data._sessionId)
+        && request.resource.data.role == 'student_volunteer'
+        && request.resource.data.department == facultyDepartment(request.resource.data._sessionId)
+        && request.resource.data.keys().hasAll(['passwordHash', 'salt', 'username', 'role', 'department', 'team']);
+    }
+
+    function isFacultyVolunteerUpdate(userId) {
+      return isFacultySession(request.resource.data._sessionId)
+        && resource.data.role == 'student_volunteer'
+        && resource.data.department == facultyDepartment(request.resource.data._sessionId)
+        && request.resource.data.role == 'student_volunteer'
+        && request.resource.data.department == resource.data.department;
     }
 
     match /alumni/{docId} {
@@ -45,15 +65,18 @@ service cloud.firestore {
       allow create: if (userId == 'gecian_at_admin'
                         && request.resource.data.role == 'admin'
                         && request.resource.data.keys().hasAll(['passwordHash', 'salt', 'username']))
-                    || isAdminSession(request.resource.data._sessionId);
+                    || isAdminSession(request.resource.data._sessionId)
+                    || isFacultyVolunteerCreate();
       allow update: if isAdminSession(request.resource.data._sessionId)
-                    || isSelfPasswordUpdate(userId);
+                    || isSelfPasswordUpdate(userId)
+                    || isFacultyVolunteerUpdate(userId);
       allow delete: if false;
     }
 
     match /institutional_users/_registry {
       allow read: if true;
-      allow create, update: if isAdminSession(request.resource.data._sessionId);
+      allow create, update: if isAdminSession(request.resource.data._sessionId)
+                            || isFacultySession(request.resource.data._sessionId);
       allow delete: if false;
     }
 
@@ -93,6 +116,26 @@ service cloud.firestore {
                             || (isValidSession(request.resource.data._sessionId)
                                 && get(sessionPath(request.resource.data._sessionId)).data.role == 'faculty_coordinator'
                                 && get(sessionPath(request.resource.data._sessionId)).data.department == request.resource.data.department);
+      allow delete: if false;
+    }
+
+    match /alumni_contacts/{contactId} {
+      allow read: if true;
+      allow create: if isAdminSession(request.resource.data._sessionId)
+                    || (isFacultySession(request.resource.data._sessionId)
+                        && request.resource.data.department == facultyDepartment(request.resource.data._sessionId))
+                    || (isValidSession(request.resource.data._sessionId)
+                        && get(sessionPath(request.resource.data._sessionId)).data.role == 'student_volunteer'
+                        && request.resource.data.createdByUserId == get(sessionPath(request.resource.data._sessionId)).data.userId
+                        && request.resource.data.keys().hasAll(['alumniName', 'whatsapp', 'department', 'deptTaskId', 'createdByUserId']));
+      allow update: if isAdminSession(request.resource.data._sessionId)
+                    || (isFacultySession(request.resource.data._sessionId)
+                        && resource.data.department == facultyDepartment(request.resource.data._sessionId)
+                        && request.resource.data.department == resource.data.department)
+                    || (isValidSession(request.resource.data._sessionId)
+                        && get(sessionPath(request.resource.data._sessionId)).data.role == 'student_volunteer'
+                        && resource.data.createdByUserId == get(sessionPath(request.resource.data._sessionId)).data.userId
+                        && request.resource.data.createdByUserId == resource.data.createdByUserId);
       allow delete: if false;
     }
   }

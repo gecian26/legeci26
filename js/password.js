@@ -4,7 +4,7 @@ import {
   getDoc,
   updateDoc,
   serverTimestamp,
-} from "https://www.gstatic.com/firebasejs/11.6.0/firebase-firestore.js";
+} from "https://www.gstatic.com/firebasejs/12.16.0/firebase-firestore.js";
 import { hashPassword, verifyPassword } from "./crypto.js";
 import { getSession, withSession } from "./auth.js";
 import {
