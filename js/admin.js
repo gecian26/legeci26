@@ -50,9 +50,10 @@ import {
   departmentBreakdownTableHtml,
   insightsHtml,
   formatFee,
-  labelWillingness,
-  labelRegistration,
+  statusBadgeHtml,
 } from "../js/alumni-connect.js";
+import { loadLeaderboardPanel } from "../js/leaderboard.js";
+import { downloadAlumniContactsPdf } from "../js/alumni-contacts-pdf.js";
 import {
   setupPasswordPanel,
   passwordFormHtml,
@@ -80,6 +81,9 @@ let eventPhotos = [];
 let cachedTeams = [];
 let cachedAdminAlumniContacts = [];
 let adminAlumniFilterBound = false;
+let cachedAdminAlumniFilters = {};
+let cachedAdminAlumniFeeLabel = "Not set";
+let cachedAdminFilteredContacts = [];
 
 initAuthGuard([ROLES.ADMIN], (session) => {
   initPortal(session);
@@ -96,6 +100,7 @@ function initPortal(session) {
   setupVolunteers();
   setupMainTasks();
   setupAlumniConnectDashboard();
+  setupLeaderboard();
   setupAccount(session);
   document.getElementById("logoutBtn").addEventListener("click", async () => {
     await logout();
@@ -130,6 +135,7 @@ function setupNavigation() {
     teams: "Teams",
     tasks: "Tasks",
     alumni: "Alumni Connect",
+    leaderboard: "Leaderboard",
     account: "Account",
   };
 
@@ -144,6 +150,9 @@ function setupNavigation() {
       document.getElementById("sidebar").classList.remove("portal-sidebar--open");
       if (panel === "alumni") {
         loadAdminAlumniDashboard();
+      }
+      if (panel === "leaderboard") {
+        loadAdminLeaderboard();
       }
     });
   });
@@ -1140,12 +1149,18 @@ function renderAdminAlumniDashboard(regSettings) {
   const batches = uniqueSortedValues(contacts, (c) => c.batch || c.passoutYear);
   const sectors = uniqueSortedValues(contacts, (c) => c.jobSector);
   const feeLabel = formatFee(regSettings);
+  cachedAdminAlumniFeeLabel = feeLabel;
 
   wrap.innerHTML = `
     <div class="ac-dashboard">
-      <p class="form-hint" style="margin:0;">Registration fee: <strong>${escapeHtml(feeLabel)}</strong>${
-        regSettings?.feeNote ? ` — ${escapeHtml(regSettings.feeNote)}` : ""
-      }</p>
+      <div class="ac-dashboard__toolbar">
+        <p class="form-hint" style="margin:0;">Registration fee: <strong>${escapeHtml(feeLabel)}</strong>${
+          regSettings?.feeNote ? ` — ${escapeHtml(regSettings.feeNote)}` : ""
+        }</p>
+        <button type="button" class="btn btn--primary btn--sm" id="admAcDownloadPdf">
+          Download contacts PDF
+        </button>
+      </div>
       <div id="admAcOverallStats"></div>
       <div id="admAcInsights"></div>
       <div>
@@ -1159,7 +1174,19 @@ function renderAdminAlumniDashboard(regSettings) {
         sectors,
       })}
       <div>
-        <h3 class="ac-dashboard__subtitle">Filtered contacts</h3>
+        <div class="ac-dashboard__toolbar" style="margin-bottom:0.5rem;">
+          <h3 class="ac-dashboard__subtitle" style="margin:0;">Filtered contacts</h3>
+          <button type="button" class="btn btn--ghost btn--sm" id="admAcDownloadPdfSecondary">
+            Download contacts PDF
+          </button>
+        </div>
+        <div class="status-legend" aria-label="Status color key">
+          <span class="status-legend__item"><span class="status-legend__dot status-legend__dot--green"></span> Willing / Paid</span>
+          <span class="status-legend__item"><span class="status-legend__dot status-legend__dot--orange"></span> Undecided / Payment pending</span>
+          <span class="status-legend__item"><span class="status-legend__dot status-legend__dot--red"></span> Not willing</span>
+          <span class="status-legend__item"><span class="status-legend__dot status-legend__dot--blue"></span> Fee waived</span>
+          <span class="status-legend__item"><span class="status-legend__dot status-legend__dot--gray"></span> No response / Not registered</span>
+        </div>
         <p class="ac-results-meta" id="admAcMeta"></p>
         <div id="admAcFilteredStats"></div>
         <div id="admAcTable" class="table-scroll" style="margin-top:1rem;"></div>
@@ -1168,7 +1195,7 @@ function renderAdminAlumniDashboard(regSettings) {
 
   if (!adminAlumniFilterBound) {
     adminAlumniFilterBound = true;
-    wrap.addEventListener("click", (e) => {
+    wrap.addEventListener("click", async (e) => {
       if (e.target.id === "admAcApplyFilters") {
         applyAdminAlumniFilters();
       } else if (e.target.id === "admAcResetFilters") {
@@ -1184,6 +1211,13 @@ function renderAdminAlumniDashboard(regSettings) {
           if (el) el.value = "";
         });
         applyAdminAlumniFilters();
+      } else if (
+        e.target.id === "admAcDownloadPdf" ||
+        e.target.id === "admAcDownloadPdfSecondary" ||
+        e.target.closest("#admAcDownloadPdf") ||
+        e.target.closest("#admAcDownloadPdfSecondary")
+      ) {
+        await handleAlumniContactsPdfDownload(e.target.closest("button") || e.target);
       }
     });
     wrap.addEventListener("keydown", (e) => {
@@ -1197,10 +1231,37 @@ function renderAdminAlumniDashboard(regSettings) {
   applyAdminAlumniFilters();
 }
 
+async function handleAlumniContactsPdfDownload(btn) {
+  const original = btn?.textContent;
+  try {
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = "Generating…";
+    }
+    await downloadAlumniContactsPdf({
+      contacts: cachedAdminFilteredContacts,
+      filters: cachedAdminAlumniFilters,
+      feeLabel: cachedAdminAlumniFeeLabel,
+      allCount: (cachedAdminAlumniContacts || []).length,
+    });
+    showToast(toast, "Alumni contacts PDF downloaded.", "success");
+  } catch (err) {
+    console.error(err);
+    showToast(toast, "Could not generate contacts PDF.", "error");
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = original || "Download contacts PDF";
+    }
+  }
+}
+
 function applyAdminAlumniFilters() {
   const filters = readAlumniFilters("admAc", { showDepartment: true });
   const all = cachedAdminAlumniContacts || [];
   const filtered = filterAlumniContacts(all, filters);
+  cachedAdminAlumniFilters = filters;
+  cachedAdminFilteredContacts = filtered;
   const overallStats = summarizeContacts(all);
   const filteredStats = summarizeContacts(filtered);
   const deptRowsAll = departmentBreakdown(all, DEPARTMENTS);
@@ -1265,12 +1326,47 @@ function adminContactsTableHtml(contacts) {
             </td>
             <td>${escapeHtml(c.whatsapp || "—")}</td>
             <td>${escapeHtml(c.batch || c.passoutYear || "—")}</td>
-            <td><span class="badge badge--role">${escapeHtml(labelWillingness(c.willingness))}</span></td>
-            <td><span class="badge badge--role">${escapeHtml(labelRegistration(c.registrationStatus))}</span></td>
+            <td>${statusBadgeHtml("willingness", c.willingness)}</td>
+            <td>${statusBadgeHtml("registration", c.registrationStatus)}</td>
             <td>${escapeHtml(c.createdByName || c.createdByUserId || "—")}</td>
           </tr>`
           )
           .join("")}
       </tbody>
     </table>`;
+}
+
+// ── Leaderboard ───────────────────────────────────────
+function setupLeaderboard() {
+  // Loaded when the Leaderboard nav panel is opened.
+}
+
+async function loadAdminLeaderboard() {
+  const wrap = document.getElementById("adminLeaderboardWrap");
+  if (!wrap) return;
+  await loadLeaderboardPanel(wrap, {
+    toast,
+    enrichVolunteers: enrichContactsWithVolunteerMeta,
+  });
+}
+
+async function enrichContactsWithVolunteerMeta(contacts) {
+  try {
+    const [registry, teams] = await Promise.all([getRegistry(), loadTeams()]);
+    const byId = new Map(registry.map((u) => [u.userId, u]));
+    return (contacts || []).map((c) => {
+      const user = byId.get(c.createdByUserId);
+      if (!user) return c;
+      return {
+        ...c,
+        createdByName: c.createdByName || user.displayName || user.fullName || c.createdByUserId,
+        createdByTeam: teamLabel(teams, user.team) || user.team || "",
+        team: teamLabel(teams, user.team) || user.team || "",
+        department: c.department || user.department || "",
+      };
+    });
+  } catch (err) {
+    console.error(err);
+    return contacts;
+  }
 }

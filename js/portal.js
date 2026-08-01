@@ -49,15 +49,22 @@ import {
   updateAlumniContact,
   loadContactsByDepartment,
   loadContactsByVolunteer,
+  loadAllAlumniContacts,
   contactsTableHtml,
   summarizeContacts,
   filterAlumniContacts,
   uniqueSortedValues,
+  departmentBreakdown,
   statsCardsHtml,
   alumniFiltersHtml,
   readAlumniFilters,
   insightsHtml,
+  departmentBreakdownTableHtml,
+  statusSelectClass,
+  statusBadgeHtml,
 } from "../js/alumni-connect.js";
+import { downloadAlumniContactsPdf } from "../js/alumni-contacts-pdf.js";
+import { loadLeaderboardPanel } from "../js/leaderboard.js";
 
 const INSTITUTIONAL_ROLES = [
   ROLES.FACULTY,
@@ -69,6 +76,8 @@ const INSTITUTIONAL_ROLES = [
   ROLES.TREASURER,
 ];
 
+const LEADERSHIP_ROLES = [ROLES.PRINCIPAL, ROLES.DEAN];
+
 const toast = document.getElementById("toast");
 let currentSession = null;
 let cachedTeams = [];
@@ -79,6 +88,11 @@ let cachedMyContacts = [];
 let editingContact = null;
 let cachedDeptAlumniContacts = [];
 let facultyAlumniFilterBound = false;
+let cachedLeadershipContacts = [];
+let cachedLeadershipFilters = {};
+let cachedLeadershipFiltered = [];
+let cachedLeadershipFeeLabel = "Not set";
+let leadershipAlumniFilterBound = false;
 
 initAuthGuard(INSTITUTIONAL_ROLES, (session) => {
   initPortal(session);
@@ -103,11 +117,30 @@ function initPortal(session) {
   if (session.role === ROLES.FACULTY && session.department) {
     document.getElementById("navDept").hidden = false;
     document.getElementById("navAlumni").hidden = false;
+    document.getElementById("execAlumniOverviewCard").hidden = true;
     document.getElementById("deptNameLabel").textContent = session.department;
+    document.getElementById("alumniPanelTitle").textContent = "Alumni Connect — Department Dashboard";
+    document.getElementById("alumniPanelHint").textContent =
+      "Summary and filtered details of alumni contacted by volunteers in your department.";
     setupDepartmentPanel(session);
   } else {
     document.getElementById("navDept").hidden = true;
+  }
+
+  if (LEADERSHIP_ROLES.includes(session.role)) {
+    document.getElementById("navAlumni").hidden = false;
+    document.getElementById("navLeaderboard").hidden = false;
+    document.getElementById("execAlumniOverviewCard").hidden = false;
+    document.getElementById("alumniPanelTitle").textContent = "Alumni Connect — Institution Overview";
+    document.getElementById("alumniPanelHint").textContent =
+      "Consolidated department-wise status and alumni contacted across the college.";
+    setupLeadershipAlumni(session);
+  } else if (session.role !== ROLES.FACULTY) {
     document.getElementById("navAlumni").hidden = true;
+    document.getElementById("navLeaderboard").hidden = true;
+    document.getElementById("execAlumniOverviewCard").hidden = true;
+  } else {
+    document.getElementById("navLeaderboard").hidden = true;
   }
 
   if (session.role === ROLES.STUDENT) {
@@ -132,6 +165,7 @@ function setupNavigation() {
     dashboard: "Dashboard",
     dept: "Department Work",
     alumni: "Alumni Connect",
+    leaderboard: "Leaderboard",
     mytasks: "My Tasks",
     account: "Account",
   };
@@ -146,14 +180,25 @@ function setupNavigation() {
       document.getElementById(`panel-${panel}`).classList.add("portal-panel--active");
       document.getElementById("pageTitle").textContent = titles[panel] || "Portal";
       document.getElementById("sidebar").classList.remove("portal-sidebar--open");
-      if (panel === "alumni" && currentSession?.department) {
-        loadDeptAlumniContacts(currentSession.department);
+      if (panel === "alumni") {
+        if (LEADERSHIP_ROLES.includes(currentSession?.role)) {
+          loadLeadershipAlumniDashboard();
+        } else if (currentSession?.department) {
+          loadDeptAlumniContacts(currentSession.department);
+        }
+      }
+      if (panel === "leaderboard" && LEADERSHIP_ROLES.includes(currentSession?.role)) {
+        loadPortalLeaderboard();
       }
     });
   });
 
   document.getElementById("mobileToggle")?.addEventListener("click", () => {
     document.getElementById("sidebar").classList.toggle("portal-sidebar--open");
+  });
+
+  document.getElementById("execGotoAlumniBtn")?.addEventListener("click", () => {
+    document.querySelector('[data-panel="alumni"]')?.click();
   });
 }
 
@@ -196,6 +241,275 @@ async function loadDashboard() {
   } catch (err) {
     console.error(err);
     renderPreEventsOverview(eventsEl, [], meetupData);
+  }
+
+  if (LEADERSHIP_ROLES.includes(currentSession?.role)) {
+    loadLeadershipDashboardOverview();
+  }
+}
+
+async function setupLeadershipAlumni(session) {
+  cachedRegistration = await loadRegistrationSettings();
+  cachedLeadershipFeeLabel = formatFee(cachedRegistration);
+}
+
+async function loadLeadershipDashboardOverview() {
+  const wrap = document.getElementById("execAlumniOverviewWrap");
+  if (!wrap) return;
+  wrap.innerHTML = '<p class="empty-state">Loading...</p>';
+  try {
+    if (!cachedLeadershipContacts.length) {
+      cachedLeadershipContacts = await loadAllAlumniContacts();
+    }
+    const stats = summarizeContacts(cachedLeadershipContacts);
+    const deptRows = departmentBreakdown(cachedLeadershipContacts, DEPARTMENTS);
+    wrap.innerHTML = `
+      ${statsCardsHtml(stats, { title: "Campus summary" })}
+      <div style="margin-top:1rem;">
+        <h3 class="ac-dashboard__subtitle">Department-wise status</h3>
+        ${departmentBreakdownTableHtml(deptRows)}
+      </div>
+      ${insightsHtml(stats, deptRows)}
+    `;
+  } catch (err) {
+    console.error(err);
+    wrap.innerHTML = '<p class="empty-state">Failed to load Alumni Connect status.</p>';
+  }
+}
+
+async function loadLeadershipAlumniDashboard() {
+  const wrap = document.getElementById("deptAlumniContactsWrap");
+  if (!wrap) return;
+  wrap.innerHTML = '<p class="empty-state">Loading...</p>';
+  try {
+    const [contacts, regSettings] = await Promise.all([
+      loadAllAlumniContacts(),
+      cachedRegistration ? Promise.resolve(cachedRegistration) : loadRegistrationSettings(),
+    ]);
+    cachedLeadershipContacts = contacts;
+    cachedRegistration = regSettings;
+    cachedLeadershipFeeLabel = formatFee(regSettings);
+    renderLeadershipAlumniDashboard();
+    // Keep dashboard overview in sync
+    loadLeadershipDashboardOverview();
+  } catch (err) {
+    console.error(err);
+    wrap.innerHTML = '<p class="empty-state">Failed to load alumni contacts.</p>';
+  }
+}
+
+function renderLeadershipAlumniDashboard() {
+  const wrap = document.getElementById("deptAlumniContactsWrap");
+  if (!wrap) return;
+
+  const contacts = cachedLeadershipContacts || [];
+  const batches = uniqueSortedValues(contacts, (c) => c.batch || c.passoutYear);
+  const sectors = uniqueSortedValues(contacts, (c) => c.jobSector);
+
+  wrap.innerHTML = `
+    <div class="ac-dashboard">
+      <div class="ac-dashboard__toolbar">
+        <p class="form-hint" style="margin:0;">Registration fee: <strong>${escapeHtml(cachedLeadershipFeeLabel)}</strong></p>
+        <button type="button" class="btn btn--primary btn--sm" id="leadAcDownloadPdf">Download contacts PDF</button>
+      </div>
+      <div id="leadAcOverallStats"></div>
+      <div id="leadAcInsights"></div>
+      <div>
+        <h3 class="ac-dashboard__subtitle">Department-wise status</h3>
+        <div id="leadAcDeptTable"></div>
+      </div>
+      ${alumniFiltersHtml("leadAc", {
+        showDepartment: true,
+        departments: DEPARTMENTS,
+        batches,
+        sectors,
+      })}
+      <div>
+        <div class="ac-dashboard__toolbar" style="margin-bottom:0.5rem;">
+          <h3 class="ac-dashboard__subtitle" style="margin:0;">Alumni contacted</h3>
+          <button type="button" class="btn btn--ghost btn--sm" id="leadAcDownloadPdfSecondary">Download contacts PDF</button>
+        </div>
+        <div class="status-legend" aria-label="Status color key">
+          <span class="status-legend__item"><span class="status-legend__dot status-legend__dot--green"></span> Willing / Paid</span>
+          <span class="status-legend__item"><span class="status-legend__dot status-legend__dot--orange"></span> Undecided / Payment pending</span>
+          <span class="status-legend__item"><span class="status-legend__dot status-legend__dot--red"></span> Not willing</span>
+          <span class="status-legend__item"><span class="status-legend__dot status-legend__dot--blue"></span> Fee waived</span>
+          <span class="status-legend__item"><span class="status-legend__dot status-legend__dot--gray"></span> No response / Not registered</span>
+        </div>
+        <p class="ac-results-meta" id="leadAcMeta"></p>
+        <div id="leadAcFilteredStats"></div>
+        <div id="leadAcTable" class="table-scroll" style="margin-top:1rem;"></div>
+      </div>
+    </div>`;
+
+  if (!leadershipAlumniFilterBound) {
+    leadershipAlumniFilterBound = true;
+    wrap.addEventListener("click", async (e) => {
+      if (e.target.id === "leadAcApplyFilters") {
+        applyLeadershipAlumniFilters();
+      } else if (e.target.id === "leadAcResetFilters") {
+        [
+          "leadAcSearch",
+          "leadAcDepartment",
+          "leadAcWillingness",
+          "leadAcRegistration",
+          "leadAcBatch",
+          "leadAcSector",
+        ].forEach((id) => {
+          const el = document.getElementById(id);
+          if (el) el.value = "";
+        });
+        applyLeadershipAlumniFilters();
+      } else if (
+        e.target.id === "leadAcDownloadPdf" ||
+        e.target.id === "leadAcDownloadPdfSecondary" ||
+        e.target.closest("#leadAcDownloadPdf") ||
+        e.target.closest("#leadAcDownloadPdfSecondary")
+      ) {
+        await handleLeadershipContactsPdf(e.target.closest("button") || e.target);
+      }
+    });
+    wrap.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && e.target.closest("#leadAcFilters")) {
+        e.preventDefault();
+        applyLeadershipAlumniFilters();
+      }
+    });
+  }
+
+  applyLeadershipAlumniFilters();
+}
+
+function applyLeadershipAlumniFilters() {
+  const filters = readAlumniFilters("leadAc", { showDepartment: true });
+  const all = cachedLeadershipContacts || [];
+  const filtered = filterAlumniContacts(all, filters);
+  cachedLeadershipFilters = filters;
+  cachedLeadershipFiltered = filtered;
+
+  const overallStats = summarizeContacts(all);
+  const filteredStats = summarizeContacts(filtered);
+  const deptRows = departmentBreakdown(all, DEPARTMENTS);
+
+  const overallEl = document.getElementById("leadAcOverallStats");
+  const insightsEl = document.getElementById("leadAcInsights");
+  const deptEl = document.getElementById("leadAcDeptTable");
+  const filteredStatsEl = document.getElementById("leadAcFilteredStats");
+  const metaEl = document.getElementById("leadAcMeta");
+  const tableEl = document.getElementById("leadAcTable");
+  if (!overallEl || !tableEl) return;
+
+  overallEl.innerHTML = statsCardsHtml(overallStats, { title: "Institution summary" });
+  if (insightsEl) insightsEl.innerHTML = insightsHtml(overallStats, deptRows);
+  if (deptEl) deptEl.innerHTML = departmentBreakdownTableHtml(deptRows);
+
+  const hasActiveFilter = Object.values(filters).some((v) => v);
+  if (filteredStatsEl) {
+    filteredStatsEl.innerHTML = hasActiveFilter
+      ? statsCardsHtml(filteredStats, { title: "Filtered summary" })
+      : "";
+  }
+  if (metaEl) {
+    metaEl.textContent = `Showing ${filtered.length} of ${all.length} contacts`;
+  }
+  tableEl.innerHTML = leadershipContactsTableHtml(filtered);
+}
+
+function leadershipContactsTableHtml(contacts) {
+  if (!contacts.length) {
+    return '<p class="empty-state">No alumni contacts match the current filters.</p>';
+  }
+  const deptLabel = (code) =>
+    DEPARTMENTS.find((d) => d.value === code)?.label || code || "—";
+
+  return `
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Department</th>
+          <th>Alumni</th>
+          <th>WhatsApp</th>
+          <th>Passout</th>
+          <th>Willingness</th>
+          <th>Registration</th>
+          <th>Volunteer</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${contacts
+          .map(
+            (c) => `
+          <tr>
+            <td>${escapeHtml(deptLabel(c.department))}</td>
+            <td>
+              <strong>${escapeHtml(c.alumniName)}</strong>
+              ${c.email ? `<br><small style="color:var(--slate-500)">${escapeHtml(c.email)}</small>` : ""}
+              ${c.company ? `<br><small style="color:var(--slate-500)">${escapeHtml(c.company)}</small>` : ""}
+            </td>
+            <td>${escapeHtml(c.whatsapp || "—")}</td>
+            <td>${escapeHtml(c.batch || c.passoutYear || "—")}</td>
+            <td>${statusBadgeHtml("willingness", c.willingness)}</td>
+            <td>${statusBadgeHtml("registration", c.registrationStatus)}</td>
+            <td>${escapeHtml(c.createdByName || c.createdByUserId || "—")}</td>
+          </tr>`
+          )
+          .join("")}
+      </tbody>
+    </table>`;
+}
+
+async function handleLeadershipContactsPdf(btn) {
+  const original = btn?.textContent;
+  try {
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = "Generating…";
+    }
+    await downloadAlumniContactsPdf({
+      contacts: cachedLeadershipFiltered,
+      filters: cachedLeadershipFilters,
+      feeLabel: cachedLeadershipFeeLabel,
+      allCount: (cachedLeadershipContacts || []).length,
+    });
+    showToast(toast, "Alumni contacts PDF downloaded.", "success");
+  } catch (err) {
+    console.error(err);
+    showToast(toast, "Could not generate contacts PDF.", "error");
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = original || "Download contacts PDF";
+    }
+  }
+}
+
+async function loadPortalLeaderboard() {
+  const wrap = document.getElementById("portalLeaderboardWrap");
+  if (!wrap) return;
+  await loadLeaderboardPanel(wrap, {
+    toast,
+    enrichVolunteers: enrichContactsWithVolunteerMeta,
+  });
+}
+
+async function enrichContactsWithVolunteerMeta(contacts) {
+  try {
+    const [registry, teams] = await Promise.all([getRegistry(), loadTeams()]);
+    const byId = new Map(registry.map((u) => [u.userId, u]));
+    return (contacts || []).map((c) => {
+      const user = byId.get(c.createdByUserId);
+      if (!user) return c;
+      return {
+        ...c,
+        createdByName: c.createdByName || user.displayName || user.fullName || c.createdByUserId,
+        createdByTeam: teamLabel(teams, user.team) || user.team || "",
+        team: teamLabel(teams, user.team) || user.team || "",
+        department: c.department || user.department || "",
+      };
+    });
+  } catch (err) {
+    console.error(err);
+    return contacts;
   }
 }
 
@@ -812,7 +1126,15 @@ function applyFacultyAlumniFilters() {
   if (metaEl) {
     metaEl.textContent = `Showing ${filtered.length} of ${cachedDeptAlumniContacts.length} contacts`;
   }
-  tableEl.innerHTML = contactsTableHtml(filtered, { showVolunteer: true });
+  tableEl.innerHTML = `
+    <div class="status-legend" aria-label="Status color key">
+      <span class="status-legend__item"><span class="status-legend__dot status-legend__dot--green"></span> Willing / Paid</span>
+      <span class="status-legend__item"><span class="status-legend__dot status-legend__dot--orange"></span> Undecided / Payment pending</span>
+      <span class="status-legend__item"><span class="status-legend__dot status-legend__dot--red"></span> Not willing</span>
+      <span class="status-legend__item"><span class="status-legend__dot status-legend__dot--blue"></span> Fee waived</span>
+      <span class="status-legend__item"><span class="status-legend__dot status-legend__dot--gray"></span> No response / Not registered</span>
+    </div>
+    ${contactsTableHtml(filtered, { showVolunteer: true })}`;
 }
 
 function resolveUserId(session) {
@@ -1125,6 +1447,8 @@ async function loadMyContacts(session, deptTaskId) {
             createdByName: contact.createdByName || currentSession.displayName || currentSession.username,
           });
           contact[field] = value;
+          const toneKind = field === "willingness" ? "willingness" : "registration";
+          select.className = statusSelectClass(toneKind, value);
           showToast(
             toast,
             field === "willingness" ? "Willingness updated." : "Registration status updated.",

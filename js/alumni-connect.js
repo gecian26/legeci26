@@ -69,6 +69,47 @@ export function labelRegistration(value) {
   return REGISTRATION_OPTIONS.find((o) => o.value === value)?.label || value || "—";
 }
 
+/** Semantic tone for status badges / PDF cells: green | orange | red | blue | gray */
+export function statusTone(kind, value) {
+  if (kind === "willingness") {
+    switch (value) {
+      case "willing":
+        return "green";
+      case "not_willing":
+        return "red";
+      case "undecided":
+        return "orange";
+      case "no_response":
+      default:
+        return "gray";
+    }
+  }
+  if (kind === "registration") {
+    switch (value) {
+      case "paid":
+        return "green";
+      case "pending_payment":
+        return "orange";
+      case "waived":
+        return "blue";
+      case "not_registered":
+      default:
+        return "gray";
+    }
+  }
+  return "gray";
+}
+
+export function statusBadgeHtml(kind, value) {
+  const tone = statusTone(kind, value);
+  const label = kind === "willingness" ? labelWillingness(value) : labelRegistration(value);
+  return `<span class="badge badge--status badge--status-${tone}">${escapeHtml(label)}</span>`;
+}
+
+export function statusSelectClass(kind, value) {
+  return `table-status-select table-status-select--${statusTone(kind, value)}`;
+}
+
 export function isAlumniConnectTask(task) {
   return task?.taskType === TASK_TYPES.ALUMNI_CONNECT;
 }
@@ -280,16 +321,16 @@ export function contactsTableHtml(
         ${contacts
           .map((c) => {
             const willingnessCell = inlineStatus
-              ? `<select class="table-status-select" data-status-field="willingness" data-contact-id="${escapeHtml(c.id)}">
+              ? `<select class="${statusSelectClass("willingness", c.willingness || "undecided")}" data-status-field="willingness" data-contact-id="${escapeHtml(c.id)}">
                   ${optionsHtml(WILLINGNESS_OPTIONS, c.willingness || "undecided")}
                 </select>`
-              : `<span class="badge badge--role">${escapeHtml(labelWillingness(c.willingness))}</span>`;
+              : statusBadgeHtml("willingness", c.willingness);
 
             const registrationCell = inlineStatus
-              ? `<select class="table-status-select" data-status-field="registrationStatus" data-contact-id="${escapeHtml(c.id)}">
+              ? `<select class="${statusSelectClass("registration", c.registrationStatus || "not_registered")}" data-status-field="registrationStatus" data-contact-id="${escapeHtml(c.id)}">
                   ${optionsHtml(REGISTRATION_OPTIONS, c.registrationStatus || "not_registered")}
                 </select>`
-              : `<span class="badge badge--role">${escapeHtml(labelRegistration(c.registrationStatus))}</span>`;
+              : statusBadgeHtml("registration", c.registrationStatus);
 
             const editIcon = editable
               ? `<button type="button" class="icon-btn" data-edit-contact="${escapeHtml(c.id)}" title="Edit details" aria-label="Edit ${escapeHtml(c.alumniName || "contact")}">
@@ -622,4 +663,82 @@ export function insightsHtml(stats, deptRows = []) {
         ${bullets.map((b) => `<li>${escapeHtml(b)}</li>`).join("")}
       </ul>
     </div>`;
+}
+
+/** Composite: contacted×1 + willing×2 + registered×3 + paid×5 */
+export function scoreContactStats(stats) {
+  const s = stats || {};
+  const contacted = Number(s.total) || 0;
+  const willing = Number(s.willing) || 0;
+  const registered = Number(s.registered) || 0;
+  const paid = Number(s.paid) || 0;
+  return contacted * 1 + willing * 2 + registered * 3 + paid * 5;
+}
+
+function compareLeaderRows(a, b) {
+  if (b.score !== a.score) return b.score - a.score;
+  if (b.paid !== a.paid) return b.paid - a.paid;
+  if (b.willing !== a.willing) return b.willing - a.willing;
+  if (b.total !== a.total) return b.total - a.total;
+  return (a.label || a.name || "").localeCompare(b.label || b.name || "");
+}
+
+export function volunteerBreakdown(contacts) {
+  const byVolunteer = new Map();
+  (contacts || []).forEach((c) => {
+    const id = c.createdByUserId || c.createdByName || "unknown";
+    if (!byVolunteer.has(id)) {
+      byVolunteer.set(id, {
+        userId: c.createdByUserId || id,
+        name: c.createdByName || c.createdByUserId || "Unknown",
+        department: c.department || "",
+        team: c.createdByTeam || c.team || "",
+        contacts: [],
+      });
+    }
+    const row = byVolunteer.get(id);
+    row.contacts.push(c);
+    if (!row.name && c.createdByName) row.name = c.createdByName;
+    if (!row.department && c.department) row.department = c.department;
+    if (!row.team && (c.createdByTeam || c.team)) {
+      row.team = c.createdByTeam || c.team;
+    }
+  });
+
+  return [...byVolunteer.values()].map((v) => {
+    const stats = summarizeContacts(v.contacts);
+    return {
+      userId: v.userId,
+      name: v.name,
+      label: v.name,
+      department: v.department,
+      team: v.team,
+      ...stats,
+      score: scoreContactStats(stats),
+    };
+  });
+}
+
+export function rankDepartments(contacts, departments = []) {
+  return departmentBreakdown(contacts, departments)
+    .map((row) => ({ ...row, score: scoreContactStats(row) }))
+    .filter((row) => row.total > 0)
+    .sort(compareLeaderRows)
+    .map((row, i) => ({ ...row, rank: i + 1 }));
+}
+
+export function rankVolunteers(contacts) {
+  return volunteerBreakdown(contacts)
+    .filter((row) => row.total > 0)
+    .sort(compareLeaderRows)
+    .map((row, i) => ({ ...row, rank: i + 1 }));
+}
+
+export function buildLeaderboardData(contacts, departments = []) {
+  const stats = summarizeContacts(contacts);
+  return {
+    stats,
+    departments: rankDepartments(contacts, departments),
+    volunteers: rankVolunteers(contacts),
+  };
 }

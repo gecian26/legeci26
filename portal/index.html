@@ -24,6 +24,7 @@
         <li><button class="portal-nav__link portal-nav__link--active" data-panel="dashboard">Dashboard</button></li>
         <li><button class="portal-nav__link" data-panel="dept" id="navDept" hidden>Department Work</button></li>
         <li><button class="portal-nav__link" data-panel="alumni" id="navAlumni" hidden>Alumni Connect</button></li>
+        <li><button class="portal-nav__link" data-panel="leaderboard" id="navLeaderboard" hidden>Leaderboard</button></li>
         <li><button class="portal-nav__link" data-panel="mytasks" id="navMyTasks" hidden>My Tasks</button></li>
         <li><button class="portal-nav__link" data-panel="account">Account</button></li>
       </ul>
@@ -50,6 +51,19 @@
           <p style="color:var(--slate-500);">
             You are signed in as <strong id="roleLabel"></strong><span id="deptLabel"></span>.
           </p>
+        </div>
+
+        <div class="portal-card" id="execAlumniOverviewCard" hidden style="margin-bottom:1.25rem;">
+          <div class="ac-dashboard__toolbar" style="margin-bottom:0.75rem;">
+            <div>
+              <h2 class="portal-card__title" style="margin:0;">Alumni Connect — Status</h2>
+              <p class="form-hint" style="margin:0.35rem 0 0;">
+                Institution-wide outreach snapshot. Open Alumni Connect for filters and full contact details.
+              </p>
+            </div>
+            <button type="button" class="btn btn--primary btn--sm" id="execGotoAlumniBtn">View details</button>
+          </div>
+          <div id="execAlumniOverviewWrap"><p class="empty-state">Loading...</p></div>
         </div>
 
         <div class="portal-card portal-card--event">
@@ -109,11 +123,17 @@
 
       <section class="portal-panel" id="panel-alumni">
         <div class="portal-card">
-          <h2 class="portal-card__title">Alumni Connect — Department Dashboard</h2>
-          <p class="form-hint" style="margin-bottom:1rem;">
+          <h2 class="portal-card__title" id="alumniPanelTitle">Alumni Connect — Department Dashboard</h2>
+          <p class="form-hint" style="margin-bottom:1rem;" id="alumniPanelHint">
             Summary and filtered details of alumni contacted by volunteers in your department.
           </p>
           <div id="deptAlumniContactsWrap"><p class="empty-state">Loading...</p></div>
+        </div>
+      </section>
+
+      <section class="portal-panel" id="panel-leaderboard">
+        <div class="portal-card" style="padding:0;overflow:hidden;border:none;background:transparent;box-shadow:none;">
+          <div id="portalLeaderboardWrap"><p class="empty-state">Loading leaderboard…</p></div>
         </div>
       </section>
 
