@@ -42,6 +42,35 @@ export const DEPT_TASKS_COLLECTION = "dept_tasks";
 export const ALUMNI_CONTACTS_COLLECTION = "alumni_contacts";
 /** settings/{REGISTRATION_SETTINGS_DOC} — LEGECI registration fee */
 export const REGISTRATION_SETTINGS_DOC = "registration";
+/** LEGECI treasurer accounting */
+export const LEGECI_EXPENSES_COLLECTION = "legeci_expenses";
+export const LEGECI_SETTLEMENTS_COLLECTION = "legeci_settlements";
+
+export const EXPENSE_CATEGORIES = [
+  { value: "venue", label: "Venue / Facilities" },
+  { value: "food", label: "Food & Catering" },
+  { value: "printing", label: "Printing & Stationery" },
+  { value: "travel", label: "Travel & Transport" },
+  { value: "decor", label: "Decoration" },
+  { value: "media", label: "Media & Publicity" },
+  { value: "gifts", label: "Gifts & Mementos" },
+  { value: "tech", label: "Tech / AV" },
+  { value: "misc", label: "Miscellaneous" },
+];
+
+export const PAYMENT_MODES = [
+  { value: "cash", label: "Cash" },
+  { value: "upi", label: "UPI" },
+  { value: "bank", label: "Bank transfer" },
+  { value: "card", label: "Card" },
+  { value: "other", label: "Other" },
+];
+
+export const EXPENSE_STATUS = {
+  PENDING: "pending",
+  PARTIAL: "partial",
+  SETTLED: "settled",
+};
 
 export const TASK_TYPES = {
   GENERAL: "general",
@@ -64,7 +93,6 @@ export const REGISTRATION_OPTIONS = [
   { value: "not_registered", label: "Not registered" },
   { value: "pending_payment", label: "Registered — payment pending" },
   { value: "paid", label: "Registered — paid" },
-  { value: "waived", label: "Registered — fee waived" },
 ];
 
 export const JOB_SECTORS = [

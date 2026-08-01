@@ -18,7 +18,6 @@ const TONE_RGB = {
   green: { text: [22, 101, 52], fill: [220, 252, 231] },
   orange: { text: [154, 52, 18], fill: [255, 237, 213] },
   red: { text: [153, 27, 27], fill: [254, 226, 226] },
-  blue: { text: [7, 89, 133], fill: [224, 242, 254] },
   gray: { text: [71, 85, 105], fill: [241, 245, 249] },
 };
 
@@ -194,7 +193,6 @@ export async function downloadAlumniContactsPdf(opts = {}) {
     { label: "Willing / Paid", tone: "green" },
     { label: "Undecided / Pending", tone: "orange" },
     { label: "Not willing", tone: "red" },
-    { label: "Fee waived", tone: "blue" },
     { label: "No response / Not registered", tone: "gray" },
   ];
   let kx = margin + 28;

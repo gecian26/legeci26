@@ -65,6 +65,7 @@ import {
 } from "../js/alumni-connect.js";
 import { downloadAlumniContactsPdf } from "../js/alumni-contacts-pdf.js";
 import { loadLeaderboardPanel } from "../js/leaderboard.js";
+import { mountTreasurerAccounts, loadExpenses, summarizeAccounts, formatINR } from "../js/legeci-accounts.js";
 
 const INSTITUTIONAL_ROLES = [
   ROLES.FACULTY,
@@ -150,6 +151,14 @@ function initPortal(session) {
     document.getElementById("navMyTasks").hidden = true;
   }
 
+  if (session.role === ROLES.TREASURER) {
+    document.getElementById("navAccounts").hidden = false;
+    document.getElementById("treasurerAccountsOverviewCard").hidden = false;
+  } else {
+    document.getElementById("navAccounts").hidden = true;
+    document.getElementById("treasurerAccountsOverviewCard").hidden = true;
+  }
+
   setupNavigation();
   setupAccount(session);
   loadDashboard();
@@ -167,6 +176,7 @@ function setupNavigation() {
     alumni: "Alumni Connect",
     leaderboard: "Leaderboard",
     mytasks: "My Tasks",
+    accounts: "Finance",
     account: "Account",
   };
 
@@ -190,6 +200,9 @@ function setupNavigation() {
       if (panel === "leaderboard" && LEADERSHIP_ROLES.includes(currentSession?.role)) {
         loadPortalLeaderboard();
       }
+      if (panel === "accounts" && currentSession?.role === ROLES.TREASURER) {
+        loadTreasurerAccounts();
+      }
     });
   });
 
@@ -199,6 +212,10 @@ function setupNavigation() {
 
   document.getElementById("execGotoAlumniBtn")?.addEventListener("click", () => {
     document.querySelector('[data-panel="alumni"]')?.click();
+  });
+
+  document.getElementById("treasurerGotoAccountsBtn")?.addEventListener("click", () => {
+    document.querySelector('[data-panel="accounts"]')?.click();
   });
 }
 
@@ -245,6 +262,29 @@ async function loadDashboard() {
 
   if (LEADERSHIP_ROLES.includes(currentSession?.role)) {
     loadLeadershipDashboardOverview();
+  }
+  if (currentSession?.role === ROLES.TREASURER) {
+    loadTreasurerDashboardSummary();
+  }
+}
+
+async function loadTreasurerDashboardSummary() {
+  const wrap = document.getElementById("treasurerDashSummaryWrap");
+  if (!wrap) return;
+  wrap.innerHTML = '<p class="empty-state">Loading...</p>';
+  try {
+    const expenses = await loadExpenses();
+    const s = summarizeAccounts(expenses);
+    wrap.innerHTML = `
+      <div class="acct-stat-grid">
+        <div class="acct-stat"><div class="acct-stat__value">${formatINR(s.totalExpenses)}</div><div class="acct-stat__label">Total expenses</div></div>
+        <div class="acct-stat acct-stat--good"><div class="acct-stat__value">${formatINR(s.totalPaid)}</div><div class="acct-stat__label">Paid to person</div></div>
+        <div class="acct-stat acct-stat--warn"><div class="acct-stat__value">${formatINR(s.totalOutstanding)}</div><div class="acct-stat__label">Not paid yet</div></div>
+        <div class="acct-stat"><div class="acct-stat__value">${s.pendingCount}</div><div class="acct-stat__label">Awaiting payment</div></div>
+      </div>`;
+  } catch (err) {
+    console.error(err);
+    wrap.innerHTML = '<p class="empty-state">Could not load finance summary.</p>';
   }
 }
 
@@ -333,7 +373,6 @@ function renderLeadershipAlumniDashboard() {
           <span class="status-legend__item"><span class="status-legend__dot status-legend__dot--green"></span> Willing / Paid</span>
           <span class="status-legend__item"><span class="status-legend__dot status-legend__dot--orange"></span> Undecided / Payment pending</span>
           <span class="status-legend__item"><span class="status-legend__dot status-legend__dot--red"></span> Not willing</span>
-          <span class="status-legend__item"><span class="status-legend__dot status-legend__dot--blue"></span> Fee waived</span>
           <span class="status-legend__item"><span class="status-legend__dot status-legend__dot--gray"></span> No response / Not registered</span>
         </div>
         <p class="ac-results-meta" id="leadAcMeta"></p>
@@ -490,6 +529,12 @@ async function loadPortalLeaderboard() {
     toast,
     enrichVolunteers: enrichContactsWithVolunteerMeta,
   });
+}
+
+async function loadTreasurerAccounts() {
+  const wrap = document.getElementById("treasurerAccountsWrap");
+  if (!wrap) return;
+  await mountTreasurerAccounts(wrap, { toast, session: currentSession });
 }
 
 async function enrichContactsWithVolunteerMeta(contacts) {
@@ -1131,7 +1176,6 @@ function applyFacultyAlumniFilters() {
       <span class="status-legend__item"><span class="status-legend__dot status-legend__dot--green"></span> Willing / Paid</span>
       <span class="status-legend__item"><span class="status-legend__dot status-legend__dot--orange"></span> Undecided / Payment pending</span>
       <span class="status-legend__item"><span class="status-legend__dot status-legend__dot--red"></span> Not willing</span>
-      <span class="status-legend__item"><span class="status-legend__dot status-legend__dot--blue"></span> Fee waived</span>
       <span class="status-legend__item"><span class="status-legend__dot status-legend__dot--gray"></span> No response / Not registered</span>
     </div>
     ${contactsTableHtml(filtered, { showVolunteer: true })}`;

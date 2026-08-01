@@ -1184,7 +1184,6 @@ function renderAdminAlumniDashboard(regSettings) {
           <span class="status-legend__item"><span class="status-legend__dot status-legend__dot--green"></span> Willing / Paid</span>
           <span class="status-legend__item"><span class="status-legend__dot status-legend__dot--orange"></span> Undecided / Payment pending</span>
           <span class="status-legend__item"><span class="status-legend__dot status-legend__dot--red"></span> Not willing</span>
-          <span class="status-legend__item"><span class="status-legend__dot status-legend__dot--blue"></span> Fee waived</span>
           <span class="status-legend__item"><span class="status-legend__dot status-legend__dot--gray"></span> No response / Not registered</span>
         </div>
         <p class="ac-results-meta" id="admAcMeta"></p>

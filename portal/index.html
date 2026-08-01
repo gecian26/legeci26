@@ -26,6 +26,7 @@
         <li><button class="portal-nav__link" data-panel="alumni" id="navAlumni" hidden>Alumni Connect</button></li>
         <li><button class="portal-nav__link" data-panel="leaderboard" id="navLeaderboard" hidden>Leaderboard</button></li>
         <li><button class="portal-nav__link" data-panel="mytasks" id="navMyTasks" hidden>My Tasks</button></li>
+        <li><button class="portal-nav__link" data-panel="accounts" id="navAccounts" hidden>Finance</button></li>
         <li><button class="portal-nav__link" data-panel="account">Account</button></li>
       </ul>
       <div class="portal-sidebar__footer">
@@ -64,6 +65,19 @@
             <button type="button" class="btn btn--primary btn--sm" id="execGotoAlumniBtn">View details</button>
           </div>
           <div id="execAlumniOverviewWrap"><p class="empty-state">Loading...</p></div>
+        </div>
+
+        <div class="portal-card" id="treasurerAccountsOverviewCard" hidden style="margin-bottom:1.25rem;">
+          <div class="ac-dashboard__toolbar" style="margin-bottom:0.75rem;">
+            <div>
+              <h2 class="portal-card__title" style="margin:0;">LEGECI Finance</h2>
+              <p class="form-hint" style="margin:0.35rem 0 0;">
+                Track expenses and mark whether each amount has been paid to the person who spent.
+              </p>
+            </div>
+            <button type="button" class="btn btn--primary btn--sm" id="treasurerGotoAccountsBtn">Open Finance</button>
+          </div>
+          <div id="treasurerDashSummaryWrap"><p class="empty-state">Loading...</p></div>
         </div>
 
         <div class="portal-card portal-card--event">
@@ -166,6 +180,12 @@
             Change <strong>Willingness</strong> or <strong>Registration</strong> from the dropdowns, or use the pencil icon beside a name to edit full details.
           </p>
           <div id="myContactsWrap"><p class="empty-state">No contacts yet.</p></div>
+        </div>
+      </section>
+
+      <section class="portal-panel" id="panel-accounts">
+        <div class="portal-card" style="padding:0;overflow:hidden;border:none;background:transparent;box-shadow:none;">
+          <div id="treasurerAccountsWrap"><p class="empty-state">Loading finance…</p></div>
         </div>
       </section>
 

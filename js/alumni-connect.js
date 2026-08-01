@@ -66,6 +66,7 @@ export function labelWillingness(value) {
 }
 
 export function labelRegistration(value) {
+  if (value === "waived") return "Not registered";
   return REGISTRATION_OPTIONS.find((o) => o.value === value)?.label || value || "—";
 }
 
@@ -90,8 +91,6 @@ export function statusTone(kind, value) {
         return "green";
       case "pending_payment":
         return "orange";
-      case "waived":
-        return "blue";
       case "not_registered":
       default:
         return "gray";
@@ -380,9 +379,8 @@ export function summarizeContacts(contacts) {
   const noResponse = countBy("willingness", "no_response");
   const paid = countBy("registrationStatus", "paid");
   const pendingPayment = countBy("registrationStatus", "pending_payment");
-  const waived = countBy("registrationStatus", "waived");
   const notRegistered = countBy("registrationStatus", "not_registered");
-  const registered = paid + pendingPayment + waived;
+  const registered = paid + pendingPayment;
   const total = list.length;
 
   const pct = (n) => (total ? Math.round((n / total) * 100) : 0);
@@ -395,7 +393,6 @@ export function summarizeContacts(contacts) {
     noResponse,
     paid,
     pendingPayment,
-    waived,
     notRegistered,
     registered,
     willingPct: pct(willing),

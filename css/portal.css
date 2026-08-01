@@ -277,12 +277,6 @@
   border-color: #fca5a5;
 }
 
-.badge--status-blue {
-  background: #e0f2fe;
-  color: #075985;
-  border-color: #7dd3fc;
-}
-
 .badge--status-gray {
   background: #f1f5f9;
   color: #475569;
@@ -315,7 +309,6 @@
 .status-legend__dot--green { background: #16a34a; }
 .status-legend__dot--orange { background: #ea580c; }
 .status-legend__dot--red { background: #dc2626; }
-.status-legend__dot--blue { background: #0284c7; }
 .status-legend__dot--gray { background: #64748b; }
 
 .table-actions {
@@ -440,12 +433,6 @@
   background: #fee2e2;
   color: #991b1b;
   border-color: #fca5a5;
-}
-
-.table-status-select--blue {
-  background: #e0f2fe;
-  color: #075985;
-  border-color: #7dd3fc;
 }
 
 .table-status-select--gray {
@@ -1516,5 +1503,212 @@
 
   .lb-pdf-btn {
     width: 100%;
+  }
+}
+
+/* ── Treasurer LEGECI Finance ── */
+.acct {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.acct-hero {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: flex-end;
+  padding: 1.5rem 1.35rem;
+  border-radius: 18px;
+  color: #fff;
+  background:
+    radial-gradient(ellipse 60% 80% at 100% 0%, rgba(212, 175, 55, 0.28), transparent 50%),
+    linear-gradient(145deg, #0f172a 0%, #1a1a2e 55%, #134e4a 130%);
+}
+
+.acct-hero__eyebrow {
+  margin: 0 0 0.35rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--gold-400);
+}
+
+.acct-hero__title {
+  margin: 0 0 0.35rem;
+  font-family: var(--font-display);
+  font-size: clamp(1.5rem, 3vw, 2rem);
+}
+
+.acct-hero__sub {
+  margin: 0;
+  max-width: 28rem;
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+.acct-hero__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.acct-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 0.75rem;
+}
+
+.acct-stat {
+  background: #fff;
+  border: 1px solid var(--slate-200);
+  border-radius: 14px;
+  padding: 1rem;
+  border-left: 3px solid var(--navy);
+}
+
+.acct-stat--good {
+  border-left-color: #16a34a;
+  background: #f0fdf4;
+}
+
+.acct-stat--warn {
+  border-left-color: #ea580c;
+  background: #fff7ed;
+}
+
+.acct-stat__value {
+  font-size: 1.2rem;
+  font-weight: 800;
+  color: var(--navy);
+}
+
+.acct-stat__label {
+  margin-top: 0.25rem;
+  font-size: 0.75rem;
+  color: var(--slate-500);
+}
+
+.acct-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  padding: 0.3rem;
+  background: var(--slate-100);
+  border-radius: 12px;
+}
+
+.acct-tab {
+  border: none;
+  background: transparent;
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: 0.85rem;
+  padding: 0.55rem 0.95rem;
+  border-radius: 9px;
+  color: var(--slate-500);
+  cursor: pointer;
+}
+
+.acct-tab--active {
+  background: #fff;
+  color: var(--navy);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
+}
+
+.acct-panel {
+  background: #fff;
+  border: 1px solid var(--slate-200);
+  border-radius: 16px;
+  padding: 1.25rem;
+}
+
+.acct-overview {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 1rem;
+}
+
+.acct-card__title {
+  margin: 0 0 0.85rem;
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--navy);
+}
+
+.acct-cat-list,
+.acct-open-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+}
+
+.acct-cat-list li,
+.acct-open-list li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.65rem 0.75rem;
+  border-radius: 10px;
+  background: var(--slate-50, #f8fafc);
+  border: 1px solid var(--slate-200);
+}
+
+.acct-open-list li {
+  flex-wrap: wrap;
+}
+
+.acct-open-list small {
+  display: block;
+  color: var(--slate-500);
+  margin-top: 0.15rem;
+}
+
+.acct-open-list__right {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.acct-paid-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  cursor: pointer;
+  margin: 0;
+}
+
+.acct-paid-toggle input {
+  width: 1.05rem;
+  height: 1.05rem;
+  accent-color: #16a34a;
+}
+
+.acct-form textarea {
+  width: 100%;
+  padding: 0.75rem 1rem;
+  font-family: var(--font-body);
+  font-size: 0.95rem;
+  border: 1.5px solid transparent;
+  border-radius: 10px;
+  background: var(--slate-100);
+  resize: vertical;
+}
+
+@media (max-width: 640px) {
+  .acct-hero__actions {
+    width: 100%;
+  }
+
+  .acct-hero__actions .btn {
+    flex: 1;
   }
 }

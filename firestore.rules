@@ -138,5 +138,30 @@ service cloud.firestore {
                         && request.resource.data.createdByUserId == resource.data.createdByUserId);
       allow delete: if false;
     }
+
+    function isTreasurerSession(sessionId) {
+      return isValidSession(sessionId)
+        && get(sessionPath(sessionId)).data.role == 'treasurer';
+    }
+
+    function isAccountsWriter(sessionId) {
+      return isAdminSession(sessionId) || isTreasurerSession(sessionId);
+    }
+
+    match /legeci_expenses/{expenseId} {
+      allow read: if true;
+      allow create: if isAccountsWriter(request.resource.data._sessionId)
+                    && request.resource.data.keys().hasAll(['title', 'amount', 'paidBy']);
+      allow update: if isAccountsWriter(request.resource.data._sessionId);
+      allow delete: if false;
+    }
+
+    match /legeci_settlements/{settlementId} {
+      allow read: if true;
+      allow create: if isAccountsWriter(request.resource.data._sessionId)
+                    && request.resource.data.keys().hasAll(['payee', 'amount']);
+      allow update: if isAccountsWriter(request.resource.data._sessionId);
+      allow delete: if false;
+    }
   }
 }
