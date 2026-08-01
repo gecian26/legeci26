@@ -157,12 +157,30 @@ function initPortal(session) {
     document.getElementById("navMyTasks").hidden = true;
   }
 
-  if (session.role === ROLES.TREASURER) {
+  if (session.role === ROLES.TREASURER || LEADERSHIP_ROLES.includes(session.role)) {
+    const financeCard = document.getElementById("treasurerAccountsOverviewCard");
+    const financeHint = document.getElementById("financeOverviewHint");
+    const financeBtn = document.getElementById("treasurerGotoAccountsBtn");
+    if (financeCard) financeCard.hidden = false;
     document.getElementById("navAccounts").hidden = false;
-    document.getElementById("treasurerAccountsOverviewCard").hidden = false;
+    if (financeBtn) financeBtn.hidden = false;
+    if (session.role === ROLES.TREASURER) {
+      if (financeHint) {
+        financeHint.textContent =
+          "Track registration fees from alumni and expenses paid to coordinators.";
+      }
+      if (financeBtn) financeBtn.textContent = "Open Finance";
+    } else {
+      if (financeHint) {
+        financeHint.textContent =
+          "Institution-wide snapshot of registration fees and LEGECI expenses. Open Finance for full details.";
+      }
+      if (financeBtn) financeBtn.textContent = "Open Finance";
+    }
   } else {
     document.getElementById("navAccounts").hidden = true;
-    document.getElementById("treasurerAccountsOverviewCard").hidden = true;
+    const financeCard = document.getElementById("treasurerAccountsOverviewCard");
+    if (financeCard) financeCard.hidden = true;
   }
 
   setupNavigation();
@@ -206,8 +224,11 @@ function setupNavigation() {
       if (panel === "leaderboard" && LEADERSHIP_ROLES.includes(currentSession?.role)) {
         loadPortalLeaderboard();
       }
-      if (panel === "accounts" && currentSession?.role === ROLES.TREASURER) {
-        loadTreasurerAccounts();
+      if (
+        panel === "accounts" &&
+        (currentSession?.role === ROLES.TREASURER || LEADERSHIP_ROLES.includes(currentSession?.role))
+      ) {
+        loadFinanceAccounts();
       }
     });
   });
@@ -269,12 +290,15 @@ async function loadDashboard() {
   if (LEADERSHIP_ROLES.includes(currentSession?.role)) {
     loadLeadershipDashboardOverview();
   }
-  if (currentSession?.role === ROLES.TREASURER) {
-    loadTreasurerDashboardSummary();
+  if (
+    currentSession?.role === ROLES.TREASURER ||
+    LEADERSHIP_ROLES.includes(currentSession?.role)
+  ) {
+    loadFinanceDashboardSummary();
   }
 }
 
-async function loadTreasurerDashboardSummary() {
+async function loadFinanceDashboardSummary() {
   const wrap = document.getElementById("treasurerDashSummaryWrap");
   if (!wrap) return;
   wrap.innerHTML = '<p class="empty-state">Loading...</p>';
@@ -542,10 +566,15 @@ async function loadPortalLeaderboard() {
   });
 }
 
-async function loadTreasurerAccounts() {
+async function loadFinanceAccounts() {
   const wrap = document.getElementById("treasurerAccountsWrap");
   if (!wrap) return;
-  await mountTreasurerAccounts(wrap, { toast, session: currentSession });
+  const readOnly = LEADERSHIP_ROLES.includes(currentSession?.role);
+  await mountTreasurerAccounts(wrap, {
+    toast,
+    session: currentSession,
+    readOnly,
+  });
 }
 
 async function enrichContactsWithVolunteerMeta(contacts) {

@@ -289,7 +289,7 @@ function optionsHtml(options, selected = "") {
     .join("");
 }
 
-export async function mountTreasurerAccounts(wrap, { toast, session } = {}) {
+export async function mountTreasurerAccounts(wrap, { toast, session, readOnly = false } = {}) {
   if (!wrap) return;
 
   let expenses = [];
@@ -311,6 +311,7 @@ export async function mountTreasurerAccounts(wrap, { toast, session } = {}) {
         loadAllAlumniContacts(),
         loadRegistrationSettings(),
       ]);
+      if (readOnly && (tab === "fee-add" || tab === "expense")) tab = "overview";
       render();
     } catch (err) {
       console.error(err);
@@ -326,13 +327,21 @@ export async function mountTreasurerAccounts(wrap, { toast, session } = {}) {
         <div class="acct-hero">
           <div>
             <p class="acct-hero__eyebrow">${escapeHtml(MEETUP_NAME || "LEGECI")} Finance</p>
-            <h2 class="acct-hero__title">Money at a glance</h2>
-            <p class="acct-hero__sub">Track expenses paid to coordinators and registration fees received from alumni.</p>
+            <h2 class="acct-hero__title">${readOnly ? "Finance details" : "Money at a glance"}</h2>
+            <p class="acct-hero__sub">${
+              readOnly
+                ? "Registration fees and expense details across LEGECI (view only)."
+                : "Track expenses paid to coordinators and registration fees received from alumni."
+            }</p>
           </div>
-          <div class="acct-hero__actions">
+          ${
+            readOnly
+              ? ""
+              : `<div class="acct-hero__actions">
             <button type="button" class="btn btn--ghost btn--sm" data-acct-tab="fee-add">+ Add fee entry</button>
             <button type="button" class="btn btn--primary btn--sm" data-acct-tab="expense">+ Add expense</button>
-          </div>
+          </div>`
+          }
         </div>
 
         <div class="acct-stat-grid">
@@ -345,18 +354,26 @@ export async function mountTreasurerAccounts(wrap, { toast, session } = {}) {
         <div class="acct-tabs" role="tablist">
           <button type="button" class="acct-tab ${tab === "overview" ? "acct-tab--active" : ""}" data-acct-tab="overview">Overview</button>
           <button type="button" class="acct-tab ${tab === "fees" ? "acct-tab--active" : ""}" data-acct-tab="fees">Registration fees</button>
-          <button type="button" class="acct-tab ${tab === "fee-add" ? "acct-tab--active" : ""}" data-acct-tab="fee-add">Add fee entry</button>
+          ${
+            readOnly
+              ? ""
+              : `<button type="button" class="acct-tab ${tab === "fee-add" ? "acct-tab--active" : ""}" data-acct-tab="fee-add">Add fee entry</button>`
+          }
           <button type="button" class="acct-tab ${tab === "expenses" ? "acct-tab--active" : ""}" data-acct-tab="expenses">All expenses</button>
-          <button type="button" class="acct-tab ${tab === "expense" ? "acct-tab--active" : ""}" data-acct-tab="expense">Add expense</button>
+          ${
+            readOnly
+              ? ""
+              : `<button type="button" class="acct-tab ${tab === "expense" ? "acct-tab--active" : ""}" data-acct-tab="expense">Add expense</button>`
+          }
         </div>
 
         <div class="acct-panel">
           ${
-            tab === "expense"
+            !readOnly && tab === "expense"
               ? expenseFormHtml()
               : tab === "expenses"
                 ? expensesListHtml(summary.enriched)
-                : tab === "fee-add"
+                : !readOnly && tab === "fee-add"
                   ? feeEntryFormHtml()
                   : tab === "fees"
                     ? feesPanelHtml(fees)
@@ -399,7 +416,11 @@ export async function mountTreasurerAccounts(wrap, { toast, session } = {}) {
                       </div>
                       <div class="acct-open-list__right">
                         <strong>${formatINR(contactFeeAmount(c, feeSettings))}</strong>
-                        <button type="button" class="btn btn--primary btn--sm" data-acct-mark-fee="${escapeHtml(c.id)}">Mark received</button>
+                        ${
+                          readOnly
+                            ? ""
+                            : `<button type="button" class="btn btn--primary btn--sm" data-acct-mark-fee="${escapeHtml(c.id)}">Mark received</button>`
+                        }
                       </div>
                     </li>`
                     )
@@ -407,7 +428,9 @@ export async function mountTreasurerAccounts(wrap, { toast, session } = {}) {
                 </ul>`
               : '<p class="empty-state" style="margin-top:0.75rem;">No pending registration fees.</p>'
           }
-          <button type="button" class="btn btn--ghost btn--sm" data-acct-tab="fees" style="margin-top:0.75rem;">Manage all fees</button>
+          <button type="button" class="btn btn--ghost btn--sm" data-acct-tab="fees" style="margin-top:0.75rem;">${
+            readOnly ? "View all fees" : "Manage all fees"
+          }</button>
         </div>
         <div class="acct-card">
           <h3 class="acct-card__title">Spend by category</h3>
@@ -424,7 +447,7 @@ export async function mountTreasurerAccounts(wrap, { toast, session } = {}) {
                     )
                     .join("")}
                 </ul>`
-              : '<p class="empty-state">No expenses yet. Tap Add expense to start.</p>'
+              : `<p class="empty-state">${readOnly ? "No expenses recorded yet." : "No expenses yet. Tap Add expense to start."}</p>`
           }
         </div>
         <div class="acct-card">
@@ -444,7 +467,11 @@ export async function mountTreasurerAccounts(wrap, { toast, session } = {}) {
                       <div class="acct-open-list__right">
                         <span class="badge badge--status badge--status-${meta.tone}">${meta.label}</span>
                         <strong>${formatINR(e.amount)}</strong>
-                        <button type="button" class="btn btn--primary btn--sm" data-acct-mark-paid="${escapeHtml(e.id)}">Mark paid</button>
+                        ${
+                          readOnly
+                            ? ""
+                            : `<button type="button" class="btn btn--primary btn--sm" data-acct-mark-paid="${escapeHtml(e.id)}">Mark paid</button>`
+                        }
                       </div>
                     </li>`;
                     })
@@ -478,6 +505,9 @@ export async function mountTreasurerAccounts(wrap, { toast, session } = {}) {
 
   function remarksCellHtml(c) {
     const remarks = contactFeeRemarks(c);
+    if (readOnly) {
+      return `<span class="acct-remarks-text">${remarks ? escapeHtml(remarks) : "—"}</span>`;
+    }
     if (editingRemarksId === c.id) {
       return `
         <div class="acct-remarks-edit">
@@ -505,12 +535,16 @@ export async function mountTreasurerAccounts(wrap, { toast, session } = {}) {
             <h3 class="acct-card__title">Alumni registration fees</h3>
             <p class="form-hint" style="margin:0;">Configured fee: <strong>${formatINR(fees.feeAmount)}</strong>${
               fees.feeNote ? ` · ${escapeHtml(fees.feeNote)}` : ""
-            }. Mark when payment is received, or add a new fee entry.</p>
+            }.${readOnly ? "" : " Mark when payment is received, or add a new fee entry."}</p>
           </div>
           <div class="acct-fees__stats">
             <span><strong>${formatINR(fees.receivedTotal)}</strong> received (${fees.paidCount})</span>
             <span><strong>${formatINR(fees.pendingTotal)}</strong> pending (${fees.pendingCount})</span>
-            <button type="button" class="btn btn--primary btn--sm" data-acct-tab="fee-add">+ Add fee entry</button>
+            ${
+              readOnly
+                ? ""
+                : `<button type="button" class="btn btn--primary btn--sm" data-acct-tab="fee-add">+ Add fee entry</button>`
+            }
           </div>
         </div>
         <div class="acct-fees__filters">
@@ -533,7 +567,7 @@ export async function mountTreasurerAccounts(wrap, { toast, session } = {}) {
                       <th>Status</th>
                       <th>Fee</th>
                       <th>Remarks</th>
-                      <th>Received?</th>
+                      <th>${readOnly ? "Payment" : "Received?"}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -556,10 +590,14 @@ export async function mountTreasurerAccounts(wrap, { toast, session } = {}) {
                         </td>
                         <td>${remarksCellHtml(c)}</td>
                         <td>
-                          <label class="acct-paid-toggle">
+                          ${
+                            readOnly
+                              ? `<span class="badge badge--status badge--status-${paid ? "green" : "orange"}">${paid ? "Received" : "Not received"}</span>`
+                              : `<label class="acct-paid-toggle">
                             <input type="checkbox" data-acct-toggle-fee="${escapeHtml(c.id)}" ${paid ? "checked" : ""}>
                             <span class="badge badge--status badge--status-${paid ? "green" : "orange"}">${paid ? "Received" : "Not received"}</span>
-                          </label>
+                          </label>`
+                          }
                         </td>
                       </tr>`;
                       })
@@ -747,7 +785,9 @@ export async function mountTreasurerAccounts(wrap, { toast, session } = {}) {
 
   function expensesListHtml(enriched) {
     if (!enriched.length) {
-      return '<p class="empty-state">No expenses yet. <button type="button" class="btn btn--primary btn--sm" data-acct-tab="expense">Add first expense</button></p>';
+      return readOnly
+        ? '<p class="empty-state">No expenses recorded yet.</p>'
+        : '<p class="empty-state">No expenses yet. <button type="button" class="btn btn--primary btn--sm" data-acct-tab="expense">Add first expense</button></p>';
     }
     return `
       <div class="table-scroll">
@@ -760,7 +800,7 @@ export async function mountTreasurerAccounts(wrap, { toast, session } = {}) {
               <th>Spent by</th>
               <th>Amount</th>
               <th>Paid to person?</th>
-              <th></th>
+              ${readOnly ? "" : "<th></th>"}
             </tr>
           </thead>
           <tbody>
@@ -779,14 +819,22 @@ export async function mountTreasurerAccounts(wrap, { toast, session } = {}) {
                 <td>${escapeHtml(e.paidBy || "—")}</td>
                 <td>${formatINR(e.amount)}</td>
                 <td>
-                  <label class="acct-paid-toggle">
+                  ${
+                    readOnly
+                      ? `<span class="badge badge--status badge--status-${meta.tone}">${meta.label}</span>`
+                      : `<label class="acct-paid-toggle">
                     <input type="checkbox" data-acct-toggle-paid="${escapeHtml(e.id)}" ${e.reimbursed ? "checked" : ""}>
                     <span class="badge badge--status badge--status-${meta.tone}">${meta.label}</span>
-                  </label>
+                  </label>`
+                  }
                 </td>
-                <td class="table-actions">
+                ${
+                  readOnly
+                    ? ""
+                    : `<td class="table-actions">
                   <button type="button" class="btn btn--ghost btn--sm" data-acct-del-exp="${escapeHtml(e.id)}">Remove</button>
-                </td>
+                </td>`
+                }
               </tr>`;
               })
               .join("")}
@@ -802,7 +850,9 @@ export async function mountTreasurerAccounts(wrap, { toast, session } = {}) {
     wrap.addEventListener("click", async (e) => {
       const tabBtn = e.target.closest("[data-acct-tab]");
       if (tabBtn) {
-        tab = tabBtn.dataset.acctTab;
+        const next = tabBtn.dataset.acctTab;
+        if (readOnly && (next === "fee-add" || next === "expense")) return;
+        tab = next;
         editingRemarksId = "";
         render();
         return;
@@ -818,6 +868,7 @@ export async function mountTreasurerAccounts(wrap, { toast, session } = {}) {
 
       const editRemarks = e.target.closest("[data-acct-edit-remarks]");
       if (editRemarks) {
+        if (readOnly) return;
         editingRemarksId = editRemarks.dataset.acctEditRemarks || "";
         render();
         const input = document.getElementById("acctRemarksInput");
@@ -829,6 +880,7 @@ export async function mountTreasurerAccounts(wrap, { toast, session } = {}) {
       }
 
       if (e.target.closest("[data-acct-cancel-remarks]")) {
+        if (readOnly) return;
         editingRemarksId = "";
         render();
         return;
@@ -836,6 +888,7 @@ export async function mountTreasurerAccounts(wrap, { toast, session } = {}) {
 
       const saveRemarks = e.target.closest("[data-acct-save-remarks]");
       if (saveRemarks) {
+        if (readOnly) return;
         const id = saveRemarks.dataset.acctSaveRemarks;
         const contact = contacts.find((c) => c.id === id);
         const value = document.getElementById("acctRemarksInput")?.value || "";
@@ -864,6 +917,7 @@ export async function mountTreasurerAccounts(wrap, { toast, session } = {}) {
 
       const markFee = e.target.closest("[data-acct-mark-fee]");
       if (markFee) {
+        if (readOnly) return;
         const contact = contacts.find((c) => c.id === markFee.dataset.acctMarkFee);
         if (!contact) return;
         try {
@@ -886,6 +940,7 @@ export async function mountTreasurerAccounts(wrap, { toast, session } = {}) {
 
       const markPaid = e.target.closest("[data-acct-mark-paid]");
       if (markPaid) {
+        if (readOnly) return;
         try {
           await setExpenseReimbursed(markPaid.dataset.acctMarkPaid, true);
           showToast(toast, "Marked as paid to person.", "success");
@@ -899,6 +954,7 @@ export async function mountTreasurerAccounts(wrap, { toast, session } = {}) {
 
       const delExp = e.target.closest("[data-acct-del-exp]");
       if (delExp) {
+        if (readOnly) return;
         if (!confirm("Remove this expense?")) return;
         try {
           await softDeleteExpense(delExp.dataset.acctDelExp);
@@ -952,6 +1008,7 @@ export async function mountTreasurerAccounts(wrap, { toast, session } = {}) {
 
       const toggleFee = e.target.closest("[data-acct-toggle-fee]");
       if (toggleFee) {
+        if (readOnly) return;
         const id = toggleFee.dataset.acctToggleFee;
         const contact = contacts.find((c) => c.id === id);
         const received = toggleFee.checked;
@@ -984,6 +1041,7 @@ export async function mountTreasurerAccounts(wrap, { toast, session } = {}) {
 
       const toggle = e.target.closest("[data-acct-toggle-paid]");
       if (toggle) {
+        if (readOnly) return;
         const id = toggle.dataset.acctTogglePaid;
         const paid = toggle.checked;
         try {
@@ -1006,6 +1064,7 @@ export async function mountTreasurerAccounts(wrap, { toast, session } = {}) {
     });
 
     wrap.addEventListener("submit", async (e) => {
+      if (readOnly) return;
       if (e.target.id === "acctFeeEntryForm") {
         e.preventDefault();
         const alumniName = document.getElementById("acctFeeName")?.value.trim();
