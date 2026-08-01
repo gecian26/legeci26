@@ -65,7 +65,13 @@ import {
 } from "../js/alumni-connect.js";
 import { downloadAlumniContactsPdf } from "../js/alumni-contacts-pdf.js";
 import { loadLeaderboardPanel } from "../js/leaderboard.js";
-import { mountTreasurerAccounts, loadExpenses, summarizeAccounts, formatINR } from "../js/legeci-accounts.js";
+import {
+  mountTreasurerAccounts,
+  loadExpenses,
+  summarizeAccounts,
+  summarizeRegistrationFees,
+  formatINR,
+} from "../js/legeci-accounts.js";
 
 const INSTITUTIONAL_ROLES = [
   ROLES.FACULTY,
@@ -273,14 +279,19 @@ async function loadTreasurerDashboardSummary() {
   if (!wrap) return;
   wrap.innerHTML = '<p class="empty-state">Loading...</p>';
   try {
-    const expenses = await loadExpenses();
+    const [expenses, contacts, feeSettings] = await Promise.all([
+      loadExpenses(),
+      loadAllAlumniContacts(),
+      loadRegistrationSettings(),
+    ]);
     const s = summarizeAccounts(expenses);
+    const fees = summarizeRegistrationFees(contacts, feeSettings);
     wrap.innerHTML = `
       <div class="acct-stat-grid">
+        <div class="acct-stat acct-stat--good"><div class="acct-stat__value">${formatINR(fees.receivedTotal)}</div><div class="acct-stat__label">Fees received (${fees.paidCount})</div></div>
+        <div class="acct-stat acct-stat--warn"><div class="acct-stat__value">${formatINR(fees.pendingTotal)}</div><div class="acct-stat__label">Fees pending (${fees.pendingCount})</div></div>
         <div class="acct-stat"><div class="acct-stat__value">${formatINR(s.totalExpenses)}</div><div class="acct-stat__label">Total expenses</div></div>
-        <div class="acct-stat acct-stat--good"><div class="acct-stat__value">${formatINR(s.totalPaid)}</div><div class="acct-stat__label">Paid to person</div></div>
-        <div class="acct-stat acct-stat--warn"><div class="acct-stat__value">${formatINR(s.totalOutstanding)}</div><div class="acct-stat__label">Not paid yet</div></div>
-        <div class="acct-stat"><div class="acct-stat__value">${s.pendingCount}</div><div class="acct-stat__label">Awaiting payment</div></div>
+        <div class="acct-stat"><div class="acct-stat__value">${formatINR(s.totalOutstanding)}</div><div class="acct-stat__label">Not paid to person</div></div>
       </div>`;
   } catch (err) {
     console.error(err);

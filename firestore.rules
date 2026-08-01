@@ -119,9 +119,19 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    function isTreasurerSession(sessionId) {
+      return isValidSession(sessionId)
+        && get(sessionPath(sessionId)).data.role == 'treasurer';
+    }
+
+    function isAccountsWriter(sessionId) {
+      return isAdminSession(sessionId) || isTreasurerSession(sessionId);
+    }
+
     match /alumni_contacts/{contactId} {
       allow read: if true;
       allow create: if isAdminSession(request.resource.data._sessionId)
+                    || isTreasurerSession(request.resource.data._sessionId)
                     || (isFacultySession(request.resource.data._sessionId)
                         && request.resource.data.department == facultyDepartment(request.resource.data._sessionId))
                     || (isValidSession(request.resource.data._sessionId)
@@ -129,6 +139,7 @@ service cloud.firestore {
                         && request.resource.data.createdByUserId == get(sessionPath(request.resource.data._sessionId)).data.userId
                         && request.resource.data.keys().hasAll(['alumniName', 'whatsapp', 'department', 'deptTaskId', 'createdByUserId']));
       allow update: if isAdminSession(request.resource.data._sessionId)
+                    || isTreasurerSession(request.resource.data._sessionId)
                     || (isFacultySession(request.resource.data._sessionId)
                         && resource.data.department == facultyDepartment(request.resource.data._sessionId)
                         && request.resource.data.department == resource.data.department)
@@ -137,15 +148,6 @@ service cloud.firestore {
                         && resource.data.createdByUserId == get(sessionPath(request.resource.data._sessionId)).data.userId
                         && request.resource.data.createdByUserId == resource.data.createdByUserId);
       allow delete: if false;
-    }
-
-    function isTreasurerSession(sessionId) {
-      return isValidSession(sessionId)
-        && get(sessionPath(sessionId)).data.role == 'treasurer';
-    }
-
-    function isAccountsWriter(sessionId) {
-      return isAdminSession(sessionId) || isTreasurerSession(sessionId);
     }
 
     match /legeci_expenses/{expenseId} {
