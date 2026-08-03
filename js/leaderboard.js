@@ -17,15 +17,26 @@ const SCORE_HINT =
 
 let cachedBoard = null;
 let activeTab = "departments";
+let scopeDepartment = null;
 let eventsBound = false;
 
-export async function loadLeaderboardPanel(wrap, { toast, enrichVolunteers } = {}) {
+export async function loadLeaderboardPanel(
+  wrap,
+  { toast, enrichVolunteers, department = null } = {}
+) {
   if (!wrap) return;
   wrap.innerHTML = '<p class="empty-state">Loading leaderboard…</p>';
   try {
+    scopeDepartment = department || null;
+    if (scopeDepartment) activeTab = "students";
+    else if (activeTab !== "students" && activeTab !== "departments") activeTab = "departments";
+
     let contacts = await loadAllAlumniContacts();
     if (typeof enrichVolunteers === "function") {
       contacts = await enrichVolunteers(contacts);
+    }
+    if (scopeDepartment) {
+      contacts = contacts.filter((c) => (c.department || "") === scopeDepartment);
     }
     cachedBoard = buildLeaderboardData(contacts, DEPARTMENTS);
     renderLeaderboard(wrap, toast);
@@ -35,40 +46,61 @@ export async function loadLeaderboardPanel(wrap, { toast, enrichVolunteers } = {
   }
 }
 
+function scopeLabel() {
+  if (!scopeDepartment) return "";
+  return (
+    DEPARTMENTS.find((d) => d.value === scopeDepartment)?.label || scopeDepartment
+  );
+}
+
 function renderLeaderboard(wrap, toast) {
   const board = cachedBoard || {
     stats: summarizeContacts([]),
     departments: [],
     volunteers: [],
   };
+  const deptScoped = !!scopeDepartment;
+  if (deptScoped) activeTab = "students";
   const rows = activeTab === "students" ? board.volunteers : board.departments;
   const modeLabel = activeTab === "students" ? "Students" : "Departments";
+  const title = deptScoped ? `${scopeLabel()} Leaderboard` : "Leaderboard";
+  const subtitle = deptScoped
+    ? `Volunteer standings in your department. ${SCORE_HINT}`
+    : `Who is crushing outreach right now. ${SCORE_HINT}`;
 
   wrap.innerHTML = `
     <div class="lb">
       <div class="lb-hero">
         <div class="lb-hero__glow" aria-hidden="true"></div>
         <div class="lb-hero__content">
-          <p class="lb-hero__eyebrow">${escapeHtml(MEETUP_NAME || "LEGECI")} · Alumni Connect</p>
-          <h2 class="lb-hero__title">Leaderboard</h2>
-          <p class="lb-hero__sub">Who is crushing outreach right now. ${escapeHtml(SCORE_HINT)}</p>
+          <p class="lb-hero__eyebrow">${escapeHtml(MEETUP_NAME || "LEGECI")} · Alumni Connect${
+            deptScoped ? ` · ${escapeHtml(scopeDepartment)}` : ""
+          }</p>
+          <h2 class="lb-hero__title">${escapeHtml(title)}</h2>
+          <p class="lb-hero__sub">${escapeHtml(subtitle)}</p>
           <div class="lb-hero__stats">
             <div class="lb-chip"><span>${board.stats.total}</span> contacted</div>
             <div class="lb-chip lb-chip--good"><span>${board.stats.willing}</span> willing</div>
             <div class="lb-chip lb-chip--gold"><span>${board.stats.paid}</span> paid</div>
           </div>
           <div class="lb-hero__actions">
-            <div class="lb-tabs" role="tablist">
+            ${
+              deptScoped
+                ? `<div class="lb-tabs" role="tablist">
+              <button type="button" class="lb-tab lb-tab--active" data-lb-tab="students" role="tab">Department volunteers</button>
+            </div>`
+                : `<div class="lb-tabs" role="tablist">
               <button type="button" class="lb-tab ${activeTab === "departments" ? "lb-tab--active" : ""}" data-lb-tab="departments" role="tab">Departments</button>
               <button type="button" class="lb-tab ${activeTab === "students" ? "lb-tab--active" : ""}" data-lb-tab="students" role="tab">Students</button>
             </div>
-            <button type="button" class="btn btn--primary lb-pdf-btn" id="lbGeneratePdf">Generate PDF</button>
+            <button type="button" class="btn btn--primary lb-pdf-btn" id="lbGeneratePdf">Generate PDF</button>`
+            }
           </div>
         </div>
       </div>
 
       <div class="lb-section">
-        <h3 class="lb-section__title">Top ${escapeHtml(modeLabel)}</h3>
+        <h3 class="lb-section__title">Top ${escapeHtml(deptScoped ? "volunteers" : modeLabel)}</h3>
         ${podiumHtml(rows.slice(0, 3), activeTab)}
       </div>
 
@@ -80,7 +112,9 @@ function renderLeaderboard(wrap, toast) {
       <div class="lb-section">
         <h3 class="lb-section__title">Leader details</h3>
         <p class="form-hint" style="margin-top:0;margin-bottom:1rem;">
-          Breakdown for the current ${escapeHtml(modeLabel.toLowerCase())} standings — department, volunteer, and conversion counts.
+          Breakdown for the current ${escapeHtml(
+            deptScoped ? "volunteer" : modeLabel.toLowerCase()
+          )} standings — department, volunteer, and conversion counts.
         </p>
         ${detailTableHtml(rows, activeTab)}
       </div>
@@ -91,7 +125,11 @@ function renderLeaderboard(wrap, toast) {
     wrap.addEventListener("click", async (e) => {
       const tabBtn = e.target.closest("[data-lb-tab]");
       if (tabBtn) {
-        activeTab = tabBtn.dataset.lbTab === "students" ? "students" : "departments";
+        if (scopeDepartment) {
+          activeTab = "students";
+        } else {
+          activeTab = tabBtn.dataset.lbTab === "students" ? "students" : "departments";
+        }
         renderLeaderboard(wrap, toast);
         return;
       }
@@ -102,7 +140,10 @@ function renderLeaderboard(wrap, toast) {
             btn.disabled = true;
             btn.textContent = "Generating…";
           }
-          await downloadLeaderboardPdf(cachedBoard);
+          await downloadLeaderboardPdf(cachedBoard, {
+            department: scopeDepartment,
+            departmentLabel: scopeLabel(),
+          });
           showToast(toast, "Leaderboard PDF downloaded.", "success");
         } catch (err) {
           console.error(err);
@@ -450,7 +491,7 @@ function pdfDrawMiniPodium(doc, rows, mode, startX, y, pw) {
   });
 }
 
-export async function downloadLeaderboardPdf(board) {
+export async function downloadLeaderboardPdf(board, { department = null, departmentLabel = "" } = {}) {
   const data = board || cachedBoard;
   if (!data) throw new Error("No leaderboard data");
 
@@ -466,6 +507,9 @@ export async function downloadLeaderboardPdf(board) {
   const topVol = data.volunteers?.[0];
   const top3Dept = (data.departments || []).slice(0, 3);
   const top3Vol = (data.volunteers || []).slice(0, 3);
+  const reportTitle = department
+    ? `${departmentLabel || department} Leaderboard`
+    : "Leaderboard Report";
 
   // Hero header
   doc.setFillColor(...PDF.navy);
@@ -485,7 +529,7 @@ export async function downloadLeaderboardPdf(board) {
   doc.text("Alumni Connect", margin, 24);
   doc.setFontSize(14);
   doc.setTextColor(...PDF.gold);
-  doc.text("Leaderboard Report", margin, 32);
+  doc.text(reportTitle, margin, 32);
 
   doc.setFont("helvetica", "normal");
   doc.setFontSize(8.5);

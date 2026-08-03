@@ -132,18 +132,49 @@ export function jobSectorOptionsHtml(selected = "") {
   );
 }
 
-export function passoutYearOptionsHtml(selected = "") {
+export function passoutYears(fromYear = 2000) {
+  const currentYear = new Date().getFullYear();
+  const end = Math.max(currentYear, 2026);
   const years = [];
-  for (let y = 2025; y >= 2004; y--) years.push(String(y));
+  for (let y = end; y >= fromYear; y--) years.push(String(y));
+  return years;
+}
+
+export function passoutYearOptionsHtml(selected = "", years = null) {
+  const list = years || passoutYears();
   return (
     '<option value="">Select year</option>' +
-    years
+    list
       .map(
         (y) =>
-          `<option value="${y}" ${String(selected) === y ? "selected" : ""}>${y}</option>`
+          `<option value="${escapeHtml(y)}" ${String(selected) === String(y) ? "selected" : ""}>${escapeHtml(y)}</option>`
       )
       .join("")
   );
+}
+
+export function passoutYearDatalistHtml(listId, years = null) {
+  const list = years || passoutYears();
+  return `<datalist id="${escapeHtml(listId)}">${list
+    .map((y) => `<option value="${escapeHtml(y)}"></option>`)
+    .join("")}</datalist>`;
+}
+
+export function passoutYearSearchFieldHtml(prefix, selected = "", years = null) {
+  const listId = `${prefix}BatchList`;
+  const value = selected || "";
+  return `
+    <input
+      type="text"
+      id="${prefix}Batch"
+      list="${escapeHtml(listId)}"
+      inputmode="numeric"
+      autocomplete="off"
+      placeholder="Type year, e.g. 2018"
+      value="${escapeHtml(String(value))}"
+    >
+    ${passoutYearDatalistHtml(listId, years)}
+    <p class="form-hint" style="margin-top:0.35rem;">Type to search, then pick a year from the suggestions.</p>`;
 }
 
 export function alumniContactFormHtml(prefix = "ac", contact = {}, feeLabel = "") {
@@ -186,7 +217,7 @@ export function alumniContactFormHtml(prefix = "ac", contact = {}, feeLabel = ""
     <div class="form-row">
       <div class="form-group">
         <label for="${prefix}Batch">Passout Year</label>
-        <select id="${prefix}Batch">${passoutYearOptionsHtml(c.batch || c.passoutYear || "")}</select>
+        ${passoutYearSearchFieldHtml(prefix, c.batch || c.passoutYear || "")}
       </div>
       <div class="form-group">
         <label for="${prefix}Willingness">Willingness Status</label>
@@ -222,7 +253,7 @@ export function readAlumniContactForm(prefix = "ac") {
   const address = document.getElementById(`${prefix}Address`)?.value.trim() || "";
   const company = document.getElementById(`${prefix}Company`)?.value.trim() || "";
   const jobSector = document.getElementById(`${prefix}JobSector`)?.value || "";
-  const batch = document.getElementById(`${prefix}Batch`)?.value || "";
+  const batch = (document.getElementById(`${prefix}Batch`)?.value || "").trim();
   const willingness = document.getElementById(`${prefix}Willingness`)?.value || "undecided";
   const registrationStatus =
     document.getElementById(`${prefix}Registration`)?.value || "not_registered";
@@ -234,6 +265,7 @@ export function readAlumniContactForm(prefix = "ac") {
   if (whatsapp && !/^\d{10,15}$/.test(whatsapp)) errors.push("WhatsApp must be 10–15 digits");
   if (mobile && !/^\d{10,15}$/.test(mobile)) errors.push("Mobile must be 10–15 digits");
   if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) errors.push("Email looks invalid");
+  if (batch && !/^\d{4}$/.test(batch)) errors.push("Passout year must be a 4-digit year");
 
   return {
     errors,
@@ -275,11 +307,19 @@ export async function updateAlumniContact(contactId, payload) {
 }
 
 /** Load contacts for a department (faculty/admin overview). */
-export async function loadContactsByDepartment(department) {
+export async function loadContactsByDepartment(
+  department,
+  { includeInvalidated = false } = {}
+) {
   const snap = await getDocs(collection(db, ALUMNI_CONTACTS_COLLECTION));
   return snap.docs
     .map((d) => ({ id: d.id, ...d.data() }))
-    .filter((c) => !c._deleted && (!department || c.department === department))
+    .filter(
+      (c) =>
+        !c._deleted &&
+        (!department || c.department === department) &&
+        (includeInvalidated || !c.invalidated)
+    )
     .sort((a, b) => (a.alumniName || "").localeCompare(b.alumniName || ""));
 }
 
@@ -291,10 +331,270 @@ export async function loadContactsByVolunteer(volunteerUserId, deptTaskId = null
     .filter(
       (c) =>
         !c._deleted &&
+        !c.invalidated &&
         c.createdByUserId === volunteerUserId &&
         (!deptTaskId || c.deptTaskId === deptTaskId)
     )
     .sort((a, b) => (a.alumniName || "").localeCompare(b.alumniName || ""));
+}
+
+export function isActiveContact(contact) {
+  return !!contact && !contact._deleted && !contact.invalidated;
+}
+
+export function normalizePhoneDigits(value) {
+  let digits = String(value || "").replace(/\D/g, "");
+  if (digits.length > 10 && digits.startsWith("91")) digits = digits.slice(2);
+  if (digits.length > 10 && digits.startsWith("0")) digits = digits.replace(/^0+/, "");
+  return digits;
+}
+
+export function normalizePersonName(value) {
+  return String(value || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+export function normalizeEmail(value) {
+  return String(value || "").trim().toLowerCase();
+}
+
+/**
+ * Suggest duplicate groups within a department contact list.
+ * Matches on WhatsApp/mobile, email, or same normalized name + passout year.
+ */
+export function findDuplicateGroups(contacts) {
+  const list = (contacts || []).filter((c) => !c._deleted && !c.invalidated);
+  const byKey = new Map();
+
+  const add = (key, reason, contact) => {
+    if (!key) return;
+    if (!byKey.has(key)) byKey.set(key, { key, reason, contacts: [] });
+    const group = byKey.get(key);
+    if (!group.contacts.some((c) => c.id === contact.id)) {
+      group.contacts.push(contact);
+    }
+  };
+
+  list.forEach((c) => {
+    const phone = normalizePhoneDigits(c.whatsapp || c.mobile);
+    if (phone.length >= 10) add(`phone:${phone}`, "Same WhatsApp / mobile", c);
+
+    const email = normalizeEmail(c.email);
+    if (email && email.includes("@")) add(`email:${email}`, "Same email", c);
+
+    const name = normalizePersonName(c.alumniName);
+    const year = String(c.batch || c.passoutYear || "").trim();
+    if (name && year) add(`nameyear:${name}|${year}`, "Same name + passout year", c);
+  });
+
+  return [...byKey.values()]
+    .filter((g) => g.contacts.length >= 2)
+    .map((g) => ({
+      ...g,
+      contacts: g.contacts.slice().sort((a, b) => (a.alumniName || "").localeCompare(b.alumniName || "")),
+    }))
+    .sort((a, b) => b.contacts.length - a.contacts.length || a.reason.localeCompare(b.reason));
+}
+
+export async function setContactInvalidated(contactId, invalidated, session, reason = "") {
+  const payload = {
+    invalidated: !!invalidated,
+    invalidatedAt: invalidated ? new Date().toISOString().slice(0, 10) : "",
+    invalidatedBy: invalidated
+      ? session?.displayName || session?.username || "Faculty"
+      : "",
+    invalidatedReason: invalidated ? String(reason || "").trim() : "",
+  };
+  await updateAlumniContact(contactId, payload);
+  return payload;
+}
+
+function detailField(label, value) {
+  const text = value == null || String(value).trim() === "" ? "—" : String(value);
+  return `
+    <div class="ac-detail-grid__item">
+      <dt>${escapeHtml(label)}</dt>
+      <dd>${escapeHtml(text)}</dd>
+    </div>`;
+}
+
+export function contactDetailFieldsHtml(c) {
+  return `
+    <dl class="ac-detail-grid">
+      ${detailField("Full name", c.alumniName)}
+      ${detailField("Email", c.email)}
+      ${detailField("WhatsApp", c.whatsapp)}
+      ${detailField("Mobile", c.mobile)}
+      ${detailField("Passout year", c.batch || c.passoutYear)}
+      ${detailField("Company / Institution", c.company)}
+      ${detailField("Job sector", c.jobSector)}
+      ${detailField("Address", c.address)}
+      ${detailField("Willingness", labelWillingness(c.willingness))}
+      ${detailField("Registration", labelRegistration(c.registrationStatus))}
+      ${detailField("Remarks", c.notes || c.feeRemarks)}
+      ${detailField("Recorded by", c.createdByName || c.createdByUserId)}
+      ${detailField("Department", c.department)}
+      ${detailField("Team", c.team)}
+      ${
+        c.invalidated
+          ? detailField(
+              "Invalidated",
+              `${c.invalidatedAt || "yes"}${c.invalidatedBy ? ` · ${c.invalidatedBy}` : ""}${
+                c.invalidatedReason ? ` · ${c.invalidatedReason}` : ""
+              }`
+            )
+          : ""
+      }
+    </dl>`;
+}
+
+/** Faculty/department detailed contacts table with expand + invalidate actions. */
+export function facultyContactsDetailHtml(
+  contacts,
+  { expandedId = "", canManage = false, showVolunteer = true } = {}
+) {
+  if (!contacts.length) {
+    return '<p class="empty-state">No alumni contacts recorded yet.</p>';
+  }
+  return `
+    <div class="table-scroll">
+      <table class="data-table data-table--dense">
+        <thead>
+          <tr>
+            <th>Alumni</th>
+            <th>Contact</th>
+            <th>Passout</th>
+            <th>Company / Sector</th>
+            <th>Willingness</th>
+            <th>Registration</th>
+            ${showVolunteer ? "<th>Volunteer</th>" : ""}
+            <th>Status</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          ${contacts
+            .map((c) => {
+              const expanded = expandedId === c.id;
+              const invalid = !!c.invalidated;
+              return `
+            <tr class="${invalid ? "ac-row--invalid" : ""}">
+              <td>
+                <strong>${escapeHtml(c.alumniName || "—")}</strong>
+                ${c.email ? `<br><small style="color:var(--slate-500)">${escapeHtml(c.email)}</small>` : ""}
+                ${c.notes || c.feeRemarks ? `<br><small style="color:var(--slate-500)">Note: ${escapeHtml(c.notes || c.feeRemarks)}</small>` : ""}
+              </td>
+              <td>
+                ${escapeHtml(c.whatsapp || "—")}
+                ${c.mobile && c.mobile !== c.whatsapp ? `<br><small style="color:var(--slate-500)">${escapeHtml(c.mobile)}</small>` : ""}
+              </td>
+              <td>${escapeHtml(c.batch || c.passoutYear || "—")}</td>
+              <td>
+                ${escapeHtml(c.company || "—")}
+                ${c.jobSector ? `<br><small style="color:var(--slate-500)">${escapeHtml(c.jobSector)}</small>` : ""}
+                ${c.address ? `<br><small style="color:var(--slate-500)">${escapeHtml(c.address)}</small>` : ""}
+              </td>
+              <td>${statusBadgeHtml("willingness", c.willingness)}</td>
+              <td>${statusBadgeHtml("registration", c.registrationStatus)}</td>
+              ${
+                showVolunteer
+                  ? `<td>${escapeHtml(c.createdByName || c.createdByUserId || "—")}</td>`
+                  : ""
+              }
+              <td>
+                ${
+                  invalid
+                    ? '<span class="badge badge--status badge--status-red">Invalidated</span>'
+                    : '<span class="badge badge--status badge--status-green">Active</span>'
+                }
+              </td>
+              <td class="table-actions">
+                <button type="button" class="btn btn--ghost btn--sm" data-ac-toggle-detail="${escapeHtml(c.id)}">${
+                  expanded ? "Hide" : "Details"
+                }</button>
+                ${
+                  canManage
+                    ? invalid
+                      ? `<button type="button" class="btn btn--ghost btn--sm" data-ac-restore="${escapeHtml(c.id)}">Restore</button>`
+                      : `<button type="button" class="btn btn--ghost btn--sm" data-ac-invalidate="${escapeHtml(c.id)}">Invalidate</button>`
+                    : ""
+                }
+              </td>
+            </tr>
+            ${
+              expanded
+                ? `<tr class="ac-detail-row ${invalid ? "ac-row--invalid" : ""}">
+                    <td colspan="${showVolunteer ? 9 : 8}">
+                      <div class="ac-detail-panel">
+                        <h4 class="ac-detail-panel__title">Full alumni details</h4>
+                        ${contactDetailFieldsHtml(c)}
+                      </div>
+                    </td>
+                  </tr>`
+                : ""
+            }`;
+            })
+            .join("")}
+        </tbody>
+      </table>
+    </div>`;
+}
+
+export function duplicateSuggestionsHtml(groups, { canManage = false } = {}) {
+  if (!groups.length) {
+    return `
+      <div class="ac-dup-empty">
+        <strong>No likely duplicates found</strong>
+        <p class="form-hint" style="margin:0.35rem 0 0;">Checked WhatsApp/mobile, email, and name + passout year within this department.</p>
+      </div>`;
+  }
+  return `
+    <div class="ac-dup-list">
+      ${groups
+        .map((g, gi) => {
+          const ids = g.contacts.map((c) => c.id).join(",");
+          return `
+        <article class="ac-dup-card" data-dup-group="${gi}">
+          <div class="ac-dup-card__head">
+            <div>
+              <strong>${escapeHtml(g.reason)}</strong>
+              <span class="badge badge--status badge--status-orange">${g.contacts.length} entries</span>
+            </div>
+            <p class="form-hint" style="margin:0.25rem 0 0;">Review and invalidate extras so only one valid record remains.</p>
+          </div>
+          <ul class="ac-dup-card__items">
+            ${g.contacts
+              .map((c) => {
+                return `
+              <li>
+                <div>
+                  <strong>${escapeHtml(c.alumniName || "—")}</strong>
+                  <small>${escapeHtml(c.whatsapp || c.mobile || "—")}${
+                    c.email ? ` · ${escapeHtml(c.email)}` : ""
+                  }${c.batch || c.passoutYear ? ` · Batch ${escapeHtml(c.batch || c.passoutYear)}` : ""}</small>
+                  <small>By ${escapeHtml(c.createdByName || c.createdByUserId || "—")}${
+                    c.company ? ` · ${escapeHtml(c.company)}` : ""
+                  }</small>
+                </div>
+                <div class="ac-dup-card__actions">
+                  <button type="button" class="btn btn--ghost btn--sm" data-ac-toggle-detail="${escapeHtml(c.id)}">Details</button>
+                  ${
+                    canManage
+                      ? `<button type="button" class="btn btn--ghost btn--sm" data-ac-invalidate="${escapeHtml(c.id)}" data-dup-siblings="${escapeHtml(ids)}">Invalidate</button>`
+                      : ""
+                  }
+                </div>
+              </li>`;
+              })
+              .join("")}
+          </ul>
+        </article>`;
+        })
+        .join("")}
+    </div>`;
 }
 
 export function contactsTableHtml(
@@ -405,6 +705,8 @@ export function summarizeContacts(contacts) {
 export function filterAlumniContacts(contacts, filters = {}) {
   const q = (filters.search || "").trim().toLowerCase();
   return (contacts || []).filter((c) => {
+    if (filters.validity === "active" && c.invalidated) return false;
+    if (filters.validity === "invalidated" && !c.invalidated) return false;
     if (filters.department && (c.department || "") !== filters.department) return false;
     if (filters.willingness && (c.willingness || "") !== filters.willingness) return false;
     if (filters.registrationStatus && (c.registrationStatus || "") !== filters.registrationStatus) {
@@ -424,8 +726,14 @@ export function filterAlumniContacts(contacts, filters = {}) {
         c.whatsapp,
         c.mobile,
         c.company,
+        c.jobSector,
+        c.address,
+        c.notes,
+        c.feeRemarks,
         c.createdByName,
         c.department,
+        c.batch,
+        c.passoutYear,
       ]
         .join(" ")
         .toLowerCase();
@@ -491,15 +799,14 @@ export function statsCardsHtml(stats, { title = "Summary" } = {}) {
 export function alumniFiltersHtml(prefix, options = {}) {
   const {
     showDepartment = false,
+    showValidity = false,
     departments = [],
     batches = [],
     sectors = [],
     volunteers = [],
   } = options;
 
-  const batchOpts =
-    '<option value="">All years</option>' +
-    batches.map((y) => `<option value="${escapeHtml(y)}">${escapeHtml(y)}</option>`).join("");
+  const yearSuggestions = batches.length ? batches : passoutYears();
   const sectorOpts =
     '<option value="">All sectors</option>' +
     sectors.map((s) => `<option value="${escapeHtml(s)}">${escapeHtml(s)}</option>`).join("");
@@ -550,7 +857,15 @@ export function alumniFiltersHtml(prefix, options = {}) {
         </div>
         <div class="form-group">
           <label for="${prefix}Batch">Passout year</label>
-          <select id="${prefix}Batch">${batchOpts}</select>
+          <input
+            type="search"
+            id="${prefix}Batch"
+            list="${prefix}BatchList"
+            inputmode="numeric"
+            autocomplete="off"
+            placeholder="Type year or leave blank for all"
+          >
+          ${passoutYearDatalistHtml(`${prefix}BatchList`, yearSuggestions)}
         </div>
         <div class="form-group">
           <label for="${prefix}Sector">Job sector</label>
@@ -564,6 +879,18 @@ export function alumniFiltersHtml(prefix, options = {}) {
               </div>`
             : ""
         }
+        ${
+          showValidity
+            ? `<div class="form-group">
+                <label for="${prefix}Validity">Record status</label>
+                <select id="${prefix}Validity">
+                  <option value="active">Active only</option>
+                  <option value="invalidated">Invalidated only</option>
+                  <option value="all">All records</option>
+                </select>
+              </div>`
+            : ""
+        }
       </div>
       <div style="display:flex;gap:0.75rem;flex-wrap:wrap;">
         <button type="button" class="btn btn--primary btn--sm" id="${prefix}ApplyFilters">Apply filters</button>
@@ -572,17 +899,20 @@ export function alumniFiltersHtml(prefix, options = {}) {
     </div>`;
 }
 
-export function readAlumniFilters(prefix, { showDepartment = false, hasVolunteer = false } = {}) {
+export function readAlumniFilters(prefix, { showDepartment = false, hasVolunteer = false, showValidity = false } = {}) {
   return {
     search: document.getElementById(`${prefix}Search`)?.value || "",
     department: showDepartment ? document.getElementById(`${prefix}Department`)?.value || "" : "",
     willingness: document.getElementById(`${prefix}Willingness`)?.value || "",
     registrationStatus: document.getElementById(`${prefix}Registration`)?.value || "",
-    batch: document.getElementById(`${prefix}Batch`)?.value || "",
+    batch: (document.getElementById(`${prefix}Batch`)?.value || "").trim(),
     jobSector: document.getElementById(`${prefix}Sector`)?.value || "",
     volunteerUserId: hasVolunteer
       ? document.getElementById(`${prefix}Volunteer`)?.value || ""
       : "",
+    validity: showValidity
+      ? document.getElementById(`${prefix}Validity`)?.value || "active"
+      : "active",
   };
 }
 

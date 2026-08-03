@@ -732,6 +732,117 @@
   margin: 0 0 0.85rem;
 }
 
+.ac-dup-section {
+  padding: 1rem 1.1rem;
+  border: 1px solid var(--slate-200);
+  border-radius: 14px;
+  background: var(--slate-50, #f8fafc);
+}
+
+.ac-dup-empty {
+  padding: 0.75rem 0.15rem 0.25rem;
+  color: var(--slate-600);
+}
+
+.ac-dup-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.ac-dup-card {
+  background: #fff;
+  border: 1px solid var(--slate-200);
+  border-radius: 12px;
+  padding: 0.85rem 1rem;
+}
+
+.ac-dup-card__head {
+  margin-bottom: 0.65rem;
+}
+
+.ac-dup-card__head strong {
+  margin-right: 0.5rem;
+}
+
+.ac-dup-card__items {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+}
+
+.ac-dup-card__items li {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 0.65rem;
+  align-items: flex-start;
+  padding: 0.55rem 0.65rem;
+  border-radius: 10px;
+  background: var(--slate-50, #f8fafc);
+  border: 1px solid var(--slate-200);
+}
+
+.ac-dup-card__items small {
+  display: block;
+  color: var(--slate-500);
+  margin-top: 0.15rem;
+}
+
+.ac-dup-card__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.ac-row--invalid td {
+  background: rgba(239, 68, 68, 0.06);
+}
+
+.ac-detail-row td {
+  background: var(--slate-50, #f8fafc);
+  padding-top: 0.85rem;
+  padding-bottom: 0.85rem;
+}
+
+.ac-detail-panel {
+  border: 1px solid var(--slate-200);
+  border-radius: 12px;
+  background: #fff;
+  padding: 0.9rem 1rem;
+}
+
+.ac-detail-panel__title {
+  margin: 0 0 0.75rem;
+  font-size: 0.95rem;
+  color: var(--navy);
+}
+
+.ac-detail-grid {
+  margin: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 0.65rem 1rem;
+}
+
+.ac-detail-grid__item dt {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--slate-500);
+  margin: 0 0 0.15rem;
+}
+
+.ac-detail-grid__item dd {
+  margin: 0;
+  font-size: 0.92rem;
+  color: var(--slate-800, #1e293b);
+  word-break: break-word;
+}
+
 .ac-stat-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));

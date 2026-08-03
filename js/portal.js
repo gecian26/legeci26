@@ -51,6 +51,10 @@ import {
   loadContactsByVolunteer,
   loadAllAlumniContacts,
   contactsTableHtml,
+  facultyContactsDetailHtml,
+  duplicateSuggestionsHtml,
+  findDuplicateGroups,
+  setContactInvalidated,
   summarizeContacts,
   filterAlumniContacts,
   uniqueSortedValues,
@@ -95,6 +99,8 @@ let cachedMyContacts = [];
 let editingContact = null;
 let cachedDeptAlumniContacts = [];
 let facultyAlumniFilterBound = false;
+let facultyExpandedContactId = "";
+let facultyShowDuplicatesOnly = false;
 let cachedLeadershipContacts = [];
 let cachedLeadershipFilters = {};
 let cachedLeadershipFiltered = [];
@@ -142,6 +148,16 @@ function initPortal(session) {
     document.getElementById("alumniPanelHint").textContent =
       "Consolidated department-wise status and alumni contacted across the college.";
     setupLeadershipAlumni(session);
+  } else if (session.role === ROLES.STUDENT && session.department) {
+    document.getElementById("navAlumni").hidden = false;
+    document.getElementById("navLeaderboard").hidden = false;
+    document.getElementById("execAlumniOverviewCard").hidden = true;
+    const deptName =
+      DEPARTMENTS.find((d) => d.value === session.department)?.label || session.department;
+    document.getElementById("alumniPanelTitle").textContent =
+      `Alumni Contacted — ${deptName}`;
+    document.getElementById("alumniPanelHint").textContent =
+      "Department-wide alumni contacted by volunteers in your department (view only). Record new contacts from My Tasks.";
   } else if (session.role !== ROLES.FACULTY) {
     document.getElementById("navAlumni").hidden = true;
     document.getElementById("navLeaderboard").hidden = true;
@@ -221,8 +237,13 @@ function setupNavigation() {
           loadDeptAlumniContacts(currentSession.department);
         }
       }
-      if (panel === "leaderboard" && LEADERSHIP_ROLES.includes(currentSession?.role)) {
-        loadPortalLeaderboard();
+      if (panel === "leaderboard") {
+        if (
+          LEADERSHIP_ROLES.includes(currentSession?.role) ||
+          (currentSession?.role === ROLES.STUDENT && currentSession?.department)
+        ) {
+          loadPortalLeaderboard();
+        }
       }
       if (
         panel === "accounts" &&
@@ -560,9 +581,12 @@ async function handleLeadershipContactsPdf(btn) {
 async function loadPortalLeaderboard() {
   const wrap = document.getElementById("portalLeaderboardWrap");
   if (!wrap) return;
+  const department =
+    currentSession?.role === ROLES.STUDENT ? currentSession.department || null : null;
   await loadLeaderboardPanel(wrap, {
     toast,
     enrichVolunteers: enrichContactsWithVolunteerMeta,
+    department,
   });
 }
 
@@ -1103,22 +1127,27 @@ async function loadDeptAlumniContacts(department) {
   const wrap = document.getElementById("deptAlumniContactsWrap");
   if (!wrap) return;
   try {
-    cachedDeptAlumniContacts = await loadContactsByDepartment(department);
-    renderFacultyAlumniDashboard();
+    const isFaculty = currentSession?.role === ROLES.FACULTY;
+    cachedDeptAlumniContacts = await loadContactsByDepartment(department, {
+      includeInvalidated: isFaculty,
+    });
+    if (isFaculty) {
+      renderFacultyAlumniDashboard();
+    } else {
+      renderStudentDeptAlumniDashboard();
+    }
   } catch (err) {
     console.error(err);
     wrap.innerHTML = '<p class="empty-state">Failed to load alumni contacts.</p>';
   }
 }
 
-function renderFacultyAlumniDashboard(preserveFilters = false) {
+function renderStudentDeptAlumniDashboard(preserveFilters = false) {
   const wrap = document.getElementById("deptAlumniContactsWrap");
   if (!wrap) return;
 
   const contacts = cachedDeptAlumniContacts || [];
-  const prev = preserveFilters
-    ? readAlumniFilters("facAc", { hasVolunteer: true })
-    : null;
+  const prev = preserveFilters ? readAlumniFilters("facAc", { hasVolunteer: true }) : null;
 
   const volunteersMap = new Map();
   contacts.forEach((c) => {
@@ -1164,8 +1193,9 @@ function renderFacultyAlumniDashboard(preserveFilters = false) {
   if (!facultyAlumniFilterBound) {
     facultyAlumniFilterBound = true;
     wrap.addEventListener("click", (e) => {
+      if (currentSession?.role === ROLES.FACULTY) return;
       if (e.target.id === "facAcApplyFilters") {
-        applyFacultyAlumniFilters();
+        applyStudentDeptAlumniFilters();
       } else if (e.target.id === "facAcResetFilters") {
         ["facAcSearch", "facAcWillingness", "facAcRegistration", "facAcBatch", "facAcSector", "facAcVolunteer"].forEach(
           (id) => {
@@ -1173,21 +1203,22 @@ function renderFacultyAlumniDashboard(preserveFilters = false) {
             if (el) el.value = "";
           }
         );
-        applyFacultyAlumniFilters();
+        applyStudentDeptAlumniFilters();
       }
     });
     wrap.addEventListener("keydown", (e) => {
+      if (currentSession?.role === ROLES.FACULTY) return;
       if (e.key === "Enter" && e.target.closest("#facAcFilters")) {
         e.preventDefault();
-        applyFacultyAlumniFilters();
+        applyStudentDeptAlumniFilters();
       }
     });
   }
 
-  applyFacultyAlumniFilters();
+  applyStudentDeptAlumniFilters();
 }
 
-function applyFacultyAlumniFilters() {
+function applyStudentDeptAlumniFilters() {
   const filters = readAlumniFilters("facAc", { hasVolunteer: true });
   const filtered = filterAlumniContacts(cachedDeptAlumniContacts, filters);
   const stats = summarizeContacts(filtered);
@@ -1218,7 +1249,236 @@ function applyFacultyAlumniFilters() {
       <span class="status-legend__item"><span class="status-legend__dot status-legend__dot--red"></span> Not willing</span>
       <span class="status-legend__item"><span class="status-legend__dot status-legend__dot--gray"></span> No response / Not registered</span>
     </div>
-    ${contactsTableHtml(filtered, { showVolunteer: true })}`;
+    ${facultyContactsDetailHtml(filtered, { showVolunteer: true, canManage: false, expandedId: "" })}`;
+}
+
+function renderFacultyAlumniDashboard(preserveFilters = false) {
+  const wrap = document.getElementById("deptAlumniContactsWrap");
+  if (!wrap) return;
+
+  const contacts = cachedDeptAlumniContacts || [];
+  const prev = preserveFilters
+    ? readAlumniFilters("facAc", { hasVolunteer: true, showValidity: true })
+    : null;
+
+  const volunteersMap = new Map();
+  contacts.forEach((c) => {
+    if (!c.createdByUserId) return;
+    if (!volunteersMap.has(c.createdByUserId)) {
+      volunteersMap.set(c.createdByUserId, {
+        userId: c.createdByUserId,
+        displayName: c.createdByName || c.createdByUserId,
+      });
+    }
+  });
+  const volunteers = [...volunteersMap.values()].sort((a, b) =>
+    (a.displayName || "").localeCompare(b.displayName || "")
+  );
+  const batches = uniqueSortedValues(contacts, (c) => c.batch || c.passoutYear);
+  const sectors = uniqueSortedValues(contacts, (c) => c.jobSector);
+  const dupGroups = findDuplicateGroups(contacts);
+
+  wrap.innerHTML = `
+    <div class="ac-dashboard">
+      <div id="facAcStats"></div>
+      <div id="facAcInsights"></div>
+
+      <div class="ac-dup-section">
+        <div class="ac-dashboard__toolbar" style="margin-bottom:0.75rem;">
+          <div>
+            <h3 class="ac-dashboard__subtitle" style="margin:0;">Possible duplicates</h3>
+            <p class="form-hint" style="margin:0.35rem 0 0;">
+              Suggested matches from WhatsApp/mobile, email, or name + passout year in your department.
+              Invalidate extras so stats and leaderboards stay accurate.
+            </p>
+          </div>
+          <button type="button" class="btn btn--ghost btn--sm" id="facAcToggleDupFilter">
+            ${facultyShowDuplicatesOnly ? "Show all contacts" : "Focus duplicate contacts"}
+          </button>
+        </div>
+        <div id="facAcDupWrap">${duplicateSuggestionsHtml(dupGroups, { canManage: true })}</div>
+      </div>
+
+      ${alumniFiltersHtml("facAc", { batches, sectors, volunteers, showValidity: true })}
+      <div>
+        <h3 class="ac-dashboard__subtitle">Contact details</h3>
+        <p class="form-hint" style="margin-top:0;">
+          Full alumni fields (company, job sector, address, remarks, etc.). Expand a row for the complete record.
+        </p>
+        <p class="ac-results-meta" id="facAcMeta"></p>
+        <div id="facAcTable"></div>
+      </div>
+    </div>`;
+
+  if (prev) {
+    const set = (id, val) => {
+      const el = document.getElementById(id);
+      if (el && val != null) el.value = val;
+    };
+    set("facAcSearch", prev.search);
+    set("facAcWillingness", prev.willingness);
+    set("facAcRegistration", prev.registrationStatus);
+    set("facAcBatch", prev.batch);
+    set("facAcSector", prev.jobSector);
+    set("facAcVolunteer", prev.volunteerUserId);
+    set("facAcValidity", prev.validity || "active");
+  }
+
+  if (!facultyAlumniFilterBound) {
+    facultyAlumniFilterBound = true;
+    wrap.addEventListener("click", async (e) => {
+      if (currentSession?.role !== ROLES.FACULTY) return;
+
+      if (e.target.id === "facAcApplyFilters") {
+        applyFacultyAlumniFilters();
+        return;
+      }
+      if (e.target.id === "facAcResetFilters") {
+        [
+          "facAcSearch",
+          "facAcWillingness",
+          "facAcRegistration",
+          "facAcBatch",
+          "facAcSector",
+          "facAcVolunteer",
+          "facAcValidity",
+        ].forEach((id) => {
+          const el = document.getElementById(id);
+          if (el) el.value = id === "facAcValidity" ? "active" : "";
+        });
+        facultyShowDuplicatesOnly = false;
+        applyFacultyAlumniFilters();
+        return;
+      }
+      if (e.target.id === "facAcToggleDupFilter") {
+        facultyShowDuplicatesOnly = !facultyShowDuplicatesOnly;
+        renderFacultyAlumniDashboard(true);
+        return;
+      }
+
+      const detailBtn = e.target.closest("[data-ac-toggle-detail]");
+      if (detailBtn) {
+        const id = detailBtn.dataset.acToggleDetail;
+        facultyExpandedContactId = facultyExpandedContactId === id ? "" : id;
+        applyFacultyAlumniFilters();
+        const row = wrap.querySelector(`[data-ac-toggle-detail="${CSS.escape(id)}"]`);
+        row?.closest("tr")?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+        return;
+      }
+
+      const invalidateBtn = e.target.closest("[data-ac-invalidate]");
+      if (invalidateBtn) {
+        const id = invalidateBtn.dataset.acInvalidate;
+        const contact = cachedDeptAlumniContacts.find((c) => c.id === id);
+        if (!contact) return;
+        const reason = prompt(
+          `Invalidate “${contact.alumniName || "this entry"}”?\nOptional reason (e.g. duplicate of another record):`,
+          "Duplicate entry"
+        );
+        if (reason === null) return;
+        try {
+          invalidateBtn.disabled = true;
+          const payload = await setContactInvalidated(id, true, currentSession, reason);
+          Object.assign(contact, payload);
+          showToast(toast, "Entry marked invalid.", "success");
+          renderFacultyAlumniDashboard(true);
+        } catch (err) {
+          console.error(err);
+          showToast(
+            toast,
+            err.code === "permission-denied"
+              ? "Permission denied. Republish firestore.rules if needed."
+              : "Could not invalidate entry.",
+            "error"
+          );
+        } finally {
+          invalidateBtn.disabled = false;
+        }
+        return;
+      }
+
+      const restoreBtn = e.target.closest("[data-ac-restore]");
+      if (restoreBtn) {
+        const id = restoreBtn.dataset.acRestore;
+        const contact = cachedDeptAlumniContacts.find((c) => c.id === id);
+        if (!contact) return;
+        if (!confirm(`Restore “${contact.alumniName || "this entry"}” as active?`)) return;
+        try {
+          restoreBtn.disabled = true;
+          const payload = await setContactInvalidated(id, false, currentSession);
+          Object.assign(contact, payload);
+          showToast(toast, "Entry restored.", "success");
+          renderFacultyAlumniDashboard(true);
+        } catch (err) {
+          console.error(err);
+          showToast(toast, "Could not restore entry.", "error");
+        } finally {
+          restoreBtn.disabled = false;
+        }
+      }
+    });
+    wrap.addEventListener("keydown", (e) => {
+      if (currentSession?.role !== ROLES.FACULTY) return;
+      if (e.key === "Enter" && e.target.closest("#facAcFilters")) {
+        e.preventDefault();
+        applyFacultyAlumniFilters();
+      }
+    });
+  }
+
+  applyFacultyAlumniFilters();
+}
+
+function applyFacultyAlumniFilters() {
+  const filters = readAlumniFilters("facAc", { hasVolunteer: true, showValidity: true });
+  let filtered = filterAlumniContacts(cachedDeptAlumniContacts, filters);
+
+  if (facultyShowDuplicatesOnly) {
+    const dupIds = new Set(
+      findDuplicateGroups(cachedDeptAlumniContacts)
+        .flatMap((g) => g.contacts)
+        .map((c) => c.id)
+    );
+    filtered = filtered.filter((c) => dupIds.has(c.id));
+  }
+
+  const activeForStats = filtered.filter((c) => !c.invalidated);
+  const stats = summarizeContacts(activeForStats);
+
+  const statsEl = document.getElementById("facAcStats");
+  const insightsEl = document.getElementById("facAcInsights");
+  const metaEl = document.getElementById("facAcMeta");
+  const tableEl = document.getElementById("facAcTable");
+  if (!statsEl || !tableEl) return;
+
+  statsEl.innerHTML = statsCardsHtml(stats, { title: "Department summary (active records)" });
+  if (insightsEl) {
+    insightsEl.innerHTML = insightsHtml(stats, [
+      {
+        label: currentSession?.department || "Department",
+        department: currentSession?.department,
+        ...stats,
+      },
+    ]);
+  }
+  if (metaEl) {
+    const invalidCount = filtered.filter((c) => c.invalidated).length;
+    metaEl.textContent = `Showing ${filtered.length} of ${cachedDeptAlumniContacts.length} contacts${
+      invalidCount ? ` · ${invalidCount} invalidated in view` : ""
+    }${facultyShowDuplicatesOnly ? " · duplicates focus on" : ""}`;
+  }
+  tableEl.innerHTML = `
+    <div class="status-legend" aria-label="Status color key">
+      <span class="status-legend__item"><span class="status-legend__dot status-legend__dot--green"></span> Willing / Paid</span>
+      <span class="status-legend__item"><span class="status-legend__dot status-legend__dot--orange"></span> Undecided / Payment pending</span>
+      <span class="status-legend__item"><span class="status-legend__dot status-legend__dot--red"></span> Not willing / Invalidated</span>
+      <span class="status-legend__item"><span class="status-legend__dot status-legend__dot--gray"></span> No response / Not registered</span>
+    </div>
+    ${facultyContactsDetailHtml(filtered, {
+      showVolunteer: true,
+      canManage: true,
+      expandedId: facultyExpandedContactId,
+    })}`;
 }
 
 function resolveUserId(session) {

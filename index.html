@@ -164,9 +164,9 @@
               </div>
               <div class="form-group">
                 <label for="batch">Batch Year <span class="required">*</span></label>
-                <select id="batch" name="batch" required>
-                  <option value="">Select year</option>
-                </select>
+                <input type="text" id="batch" name="batch" list="batchYearList" inputmode="numeric" autocomplete="off" required placeholder="Type year, e.g. 2018">
+                <datalist id="batchYearList"></datalist>
+                <p class="form-hint">Type to search, then pick a year from the suggestions.</p>
               </div>
             </div>
             <div class="form-row">

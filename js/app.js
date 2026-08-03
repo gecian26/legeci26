@@ -12,7 +12,6 @@ const navToggle = document.getElementById("navToggle");
 const navMenu = document.getElementById("navMenu");
 const registerForm = document.getElementById("registerForm");
 const submitBtn = document.getElementById("submitBtn");
-const batchSelect = document.getElementById("batch");
 const toast = document.getElementById("toast");
 
 import { loadPublicMeetup, loadPublicEvents, setupLightbox } from "./events-public.js";
@@ -27,12 +26,13 @@ document.addEventListener("DOMContentLoaded", () => {
 });
 
 function populateBatchYears() {
+  const list = document.getElementById("batchYearList");
+  if (!list) return;
   const currentYear = new Date().getFullYear();
   for (let year = currentYear; year >= 2000; year--) {
     const option = document.createElement("option");
-    option.value = year;
-    option.textContent = year;
-    batchSelect.appendChild(option);
+    option.value = String(year);
+    list.appendChild(option);
   }
 }
 
@@ -103,6 +103,11 @@ function validateForm() {
   const emailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailInput.value.trim());
   emailInput.classList.toggle("error", !emailValid);
   if (!emailValid) valid = false;
+
+  const batchInput = registerForm.batch;
+  const batchValid = /^\d{4}$/.test((batchInput.value || "").trim());
+  batchInput.classList.toggle("error", !batchValid);
+  if (!batchValid) valid = false;
 
   if (!valid) {
     showToast("Please fill in all required fields correctly.", "error");
