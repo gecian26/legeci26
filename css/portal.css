@@ -765,37 +765,20 @@
   margin-right: 0.5rem;
 }
 
-.ac-dup-card__items {
-  list-style: none;
+.ac-dup-table {
   margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 0.55rem;
+  background: #fff;
 }
 
-.ac-dup-card__items li {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: space-between;
-  gap: 0.65rem;
-  align-items: flex-start;
-  padding: 0.55rem 0.65rem;
-  border-radius: 10px;
-  background: var(--slate-50, #f8fafc);
-  border: 1px solid var(--slate-200);
+.ac-dup-table th,
+.ac-dup-table td {
+  white-space: nowrap;
 }
 
-.ac-dup-card__items small {
-  display: block;
-  color: var(--slate-500);
-  margin-top: 0.15rem;
-}
-
-.ac-dup-card__actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.35rem;
+.ac-dup-table td:first-child,
+.ac-dup-table td:nth-child(5) {
+  white-space: normal;
+  min-width: 120px;
 }
 
 .ac-row--invalid td {

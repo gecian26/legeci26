@@ -390,13 +390,37 @@ export function findDuplicateGroups(contacts) {
     if (name && year) add(`nameyear:${name}|${year}`, "Same name + passout year", c);
   });
 
-  return [...byKey.values()]
+  const raw = [...byKey.values()]
     .filter((g) => g.contacts.length >= 2)
     .map((g) => ({
       ...g,
       contacts: g.contacts.slice().sort((a, b) => (a.alumniName || "").localeCompare(b.alumniName || "")),
-    }))
-    .sort((a, b) => b.contacts.length - a.contacts.length || a.reason.localeCompare(b.reason));
+    }));
+
+  // Merge groups that contain the exact same contact set (avoids repeating the same rows).
+  const merged = new Map();
+  raw.forEach((g) => {
+    const setKey = g.contacts
+      .map((c) => c.id)
+      .sort()
+      .join("|");
+    if (!merged.has(setKey)) {
+      merged.set(setKey, {
+        key: setKey,
+        reasons: [g.reason],
+        reason: g.reason,
+        contacts: g.contacts,
+      });
+    } else {
+      const existing = merged.get(setKey);
+      if (!existing.reasons.includes(g.reason)) existing.reasons.push(g.reason);
+      existing.reason = existing.reasons.join(" · ");
+    }
+  });
+
+  return [...merged.values()].sort(
+    (a, b) => b.contacts.length - a.contacts.length || a.reason.localeCompare(b.reason)
+  );
 }
 
 export async function setContactInvalidated(contactId, invalidated, session, reason = "") {
@@ -565,32 +589,58 @@ export function duplicateSuggestionsHtml(groups, { canManage = false } = {}) {
             </div>
             <p class="form-hint" style="margin:0.25rem 0 0;">Review and invalidate extras so only one valid record remains.</p>
           </div>
-          <ul class="ac-dup-card__items">
-            ${g.contacts
-              .map((c) => {
-                return `
-              <li>
-                <div>
-                  <strong>${escapeHtml(c.alumniName || "—")}</strong>
-                  <small>${escapeHtml(c.whatsapp || c.mobile || "—")}${
-                    c.email ? ` · ${escapeHtml(c.email)}` : ""
-                  }${c.batch || c.passoutYear ? ` · Batch ${escapeHtml(c.batch || c.passoutYear)}` : ""}</small>
-                  <small>By ${escapeHtml(c.createdByName || c.createdByUserId || "—")}${
-                    c.company ? ` · ${escapeHtml(c.company)}` : ""
-                  }</small>
-                </div>
-                <div class="ac-dup-card__actions">
-                  <button type="button" class="btn btn--ghost btn--sm" data-ac-toggle-detail="${escapeHtml(c.id)}">Details</button>
-                  ${
-                    canManage
-                      ? `<button type="button" class="btn btn--ghost btn--sm" data-ac-invalidate="${escapeHtml(c.id)}" data-dup-siblings="${escapeHtml(ids)}">Invalidate</button>`
-                      : ""
-                  }
-                </div>
-              </li>`;
-              })
-              .join("")}
-          </ul>
+          <div class="table-scroll">
+            <table class="data-table data-table--dense ac-dup-table">
+              <thead>
+                <tr>
+                  <th>Alumni</th>
+                  <th>WhatsApp / Mobile</th>
+                  <th>Email</th>
+                  <th>Passout</th>
+                  <th>Company</th>
+                  <th>Willingness</th>
+                  <th>Registration</th>
+                  <th>Volunteer</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                ${g.contacts
+                  .map((c) => {
+                    return `
+                  <tr>
+                    <td><strong>${escapeHtml(c.alumniName || "—")}</strong></td>
+                    <td>
+                      ${escapeHtml(c.whatsapp || "—")}
+                      ${
+                        c.mobile && c.mobile !== c.whatsapp
+                          ? `<br><small style="color:var(--slate-500)">${escapeHtml(c.mobile)}</small>`
+                          : ""
+                      }
+                    </td>
+                    <td>${escapeHtml(c.email || "—")}</td>
+                    <td>${escapeHtml(c.batch || c.passoutYear || "—")}</td>
+                    <td>
+                      ${escapeHtml(c.company || "—")}
+                      ${c.jobSector ? `<br><small style="color:var(--slate-500)">${escapeHtml(c.jobSector)}</small>` : ""}
+                    </td>
+                    <td>${statusBadgeHtml("willingness", c.willingness)}</td>
+                    <td>${statusBadgeHtml("registration", c.registrationStatus)}</td>
+                    <td>${escapeHtml(c.createdByName || c.createdByUserId || "—")}</td>
+                    <td class="table-actions">
+                      <button type="button" class="btn btn--ghost btn--sm" data-ac-toggle-detail="${escapeHtml(c.id)}">Details</button>
+                      ${
+                        canManage
+                          ? `<button type="button" class="btn btn--ghost btn--sm" data-ac-invalidate="${escapeHtml(c.id)}" data-dup-siblings="${escapeHtml(ids)}">Invalidate</button>`
+                          : ""
+                      }
+                    </td>
+                  </tr>`;
+                  })
+                  .join("")}
+              </tbody>
+            </table>
+          </div>
         </article>`;
         })
         .join("")}
