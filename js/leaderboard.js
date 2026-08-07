@@ -2,6 +2,8 @@ import { jsPDF } from "https://cdn.jsdelivr.net/npm/jspdf@2.5.2/+esm";
 import { autoTable } from "https://cdn.jsdelivr.net/npm/jspdf-autotable@5.0.2/+esm";
 import {
   DEPARTMENTS,
+  DEPARTMENT_BATCH_START_YEAR,
+  ALUMNI_BATCH_POOL_END_YEAR,
   MEETUP_NAME,
   escapeHtml,
   showToast,
@@ -10,10 +12,19 @@ import {
   loadAllAlumniContacts,
   buildLeaderboardData,
   summarizeContacts,
+  departmentScoreWeight,
+  departmentBatchPoolSize,
 } from "./alumni-connect.js";
 
-const SCORE_HINT =
-  "Score = contacted×1 + willing×2 + registered×3 + paid×5";
+function buildScoreHint(applyBatchWeight) {
+  const base = "Score = contacted×1 + willing×2 + registered×3 + paid×5";
+  if (!applyBatchWeight) return base;
+  const mechW = departmentScoreWeight("MECH");
+  if (Math.abs(mechW - 1) < 0.001) return base;
+  const pool = departmentBatchPoolSize("MECH");
+  const start = DEPARTMENT_BATCH_START_YEAR.MECH;
+  return `${base}. MECH score ×${mechW.toFixed(2)} (started ${start}; ${pool} batch-years vs others through ${ALUMNI_BATCH_POOL_END_YEAR})`;
+}
 
 let cachedBoard = null;
 let activeTab = "departments";
@@ -38,7 +49,11 @@ export async function loadLeaderboardPanel(
     if (scopeDepartment) {
       contacts = contacts.filter((c) => (c.department || "") === scopeDepartment);
     }
-    cachedBoard = buildLeaderboardData(contacts, DEPARTMENTS);
+    // Within one department, batch weight cancels out — use raw scores.
+    // Institution-wide boards weight MECH for fewer batches since 2013.
+    cachedBoard = buildLeaderboardData(contacts, DEPARTMENTS, {
+      applyBatchWeight: !scopeDepartment,
+    });
     renderLeaderboard(wrap, toast);
   } catch (err) {
     console.error(err);
@@ -64,9 +79,10 @@ function renderLeaderboard(wrap, toast) {
   const rows = activeTab === "students" ? board.volunteers : board.departments;
   const modeLabel = activeTab === "students" ? "Students" : "Departments";
   const title = deptScoped ? `${scopeLabel()} Leaderboard` : "Leaderboard";
+  const scoreHint = buildScoreHint(!deptScoped);
   const subtitle = deptScoped
-    ? `Volunteer standings in your department. ${SCORE_HINT}`
-    : `Who is crushing outreach right now. ${SCORE_HINT}`;
+    ? `Volunteer standings in your department. ${scoreHint}`
+    : `Who is crushing outreach right now. ${scoreHint}`;
 
   wrap.innerHTML = `
     <div class="lb">
@@ -199,6 +215,11 @@ function podiumHtml(top, mode) {
             <div class="lb-podium__name">${escapeHtml(name)}</div>
             <div class="lb-podium__sub">${escapeHtml(sub)}</div>
             <div class="lb-podium__score">${row.score}<span>pts</span></div>
+            ${
+              row.scoreWeight > 1.001 && row.rawScore != null
+                ? `<div class="lb-podium__raw">raw ${row.rawScore} · ×${Number(row.scoreWeight).toFixed(2)}</div>`
+                : ""
+            }
             <div class="lb-podium__meta">
               <span>${row.willing} willing</span>
               <span>${row.paid} paid</span>
@@ -262,12 +283,19 @@ function detailTableHtml(rows, mode) {
             <th>Registered</th>
             <th>Paid</th>
             <th>Score</th>
+            <th>Raw</th>
           </tr>
         </thead>
         <tbody>
           ${rows
             .map((row) => {
               const highlight = row.rank <= 3 ? ` class="lb-detail-row--top"` : "";
+              const raw =
+                row.rawScore != null && row.scoreWeight > 1.001
+                  ? `${row.rawScore} ×${Number(row.scoreWeight).toFixed(2)}`
+                  : row.rawScore != null
+                    ? String(row.rawScore)
+                    : "—";
               return `
             <tr${highlight}>
               <td><strong>#${row.rank}</strong></td>
@@ -283,6 +311,7 @@ function detailTableHtml(rows, mode) {
               <td>${row.registered}</td>
               <td>${row.paid}</td>
               <td><strong>${row.score}</strong></td>
+              <td>${escapeHtml(raw)}</td>
             </tr>`;
             })
             .join("")}
@@ -555,12 +584,15 @@ export async function downloadLeaderboardPdf(board, { department = null, departm
   y += cardH + 8;
 
   doc.setFillColor(245, 245, 250);
-  pdfRoundedRect(doc, margin, y, contentW, 10, 2, "F");
+  const scoreHint = buildScoreHint(!department);
+  const hintLines = doc.splitTextToSize(`Scoring  ·  ${scoreHint}`, contentW - 8);
+  const hintH = Math.max(10, 4 + hintLines.length * 3.5);
+  pdfRoundedRect(doc, margin, y, contentW, hintH, 2, "F");
   doc.setFont("helvetica", "normal");
   doc.setFontSize(7.5);
   doc.setTextColor(...PDF.muted);
-  doc.text(`Scoring  ·  ${SCORE_HINT}`, margin + 4, y + 6.5);
-  y += 16;
+  doc.text(hintLines, margin + 4, y + 5.5);
+  y += hintH + 6;
 
   // Champions
   y = pdfSectionTitle(doc, margin, y, "Champions", "Top department + top student volunteer");
@@ -617,14 +649,19 @@ export async function downloadLeaderboardPdf(board, { department = null, departm
     String(r.registered),
     String(r.paid),
     String(r.score),
+    r.rawScore != null && r.scoreWeight > 1.001
+      ? `${r.rawScore}×${Number(r.scoreWeight).toFixed(2)}`
+      : r.rawScore != null
+        ? String(r.rawScore)
+        : "—",
   ]);
 
   autoTable(doc, {
     startY: y,
-    head: [["Rank", "Department", "Code", "Hit", "Willing", "Reg", "Paid", "Score"]],
+    head: [["Rank", "Department", "Code", "Hit", "Willing", "Reg", "Paid", "Score", "Raw"]],
     body: deptBody.length
       ? deptBody
-      : [["—", "No data yet — go make moves", "—", "0", "0", "0", "0", "0"]],
+      : [["—", "No data yet — go make moves", "—", "0", "0", "0", "0", "0", "—"]],
     margin: { left: margin, right: margin },
     styles: {
       fontSize: 8,
@@ -662,14 +699,19 @@ export async function downloadLeaderboardPdf(board, { department = null, departm
     String(r.registered),
     String(r.paid),
     String(r.score),
+    r.rawScore != null && r.scoreWeight > 1.001
+      ? `${r.rawScore}×${Number(r.scoreWeight).toFixed(2)}`
+      : r.rawScore != null
+        ? String(r.rawScore)
+        : "—",
   ]);
 
   autoTable(doc, {
     startY: y,
-    head: [["Rank", "Student", "Dept / Team", "Hit", "Willing", "Reg", "Paid", "Score"]],
+    head: [["Rank", "Student", "Dept / Team", "Hit", "Willing", "Reg", "Paid", "Score", "Raw"]],
     body: volBody.length
       ? volBody
-      : [["—", "No data yet — go make moves", "—", "0", "0", "0", "0", "0"]],
+      : [["—", "No data yet — go make moves", "—", "0", "0", "0", "0", "0", "—"]],
     margin: { left: margin, right: margin },
     styles: {
       fontSize: 8,

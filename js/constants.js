@@ -28,6 +28,29 @@ export const DEPARTMENTS = [
   { value: "IT", label: "Information Technology" },
 ];
 
+/**
+ * First passout / programme start year used for alumni outreach pool size.
+ * Mechanical started later (2013), so it has fewer batches than other branches.
+ */
+export const DEPARTMENT_BATCH_START_YEAR = {
+  CSE: 2000,
+  ECE: 2000,
+  EEE: 2000,
+  IT: 2000,
+  MECH: 2013,
+};
+
+/** Inclusive end year for batch-pool sizing (GECI alumni outreach window). */
+export const ALUMNI_BATCH_POOL_END_YEAR = 2025;
+
+/**
+ * Explicit leaderboard score multipliers (overrides auto pool-ratio when set).
+ * MECH uses 1.5 for fewer batches since 2013 — not the full 26/13 ≈ 2× ratio.
+ */
+export const DEPARTMENT_SCORE_WEIGHT_OVERRIDE = {
+  MECH: 1.5,
+};
+
 export const ADMIN_USERNAME = "gecian@admin";
 export const ADMIN_PASSWORD = "gecian_GECI26";
 

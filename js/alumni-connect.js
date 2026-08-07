@@ -18,6 +18,10 @@ import {
   REGISTRATION_OPTIONS,
   JOB_SECTORS,
   TASK_TYPES,
+  DEPARTMENTS,
+  DEPARTMENT_BATCH_START_YEAR,
+  DEPARTMENT_SCORE_WEIGHT_OVERRIDE,
+  ALUMNI_BATCH_POOL_END_YEAR,
   escapeHtml,
 } from "./constants.js";
 
@@ -1052,15 +1056,62 @@ export function scoreContactStats(stats) {
   return contacted * 1 + willing * 2 + registered * 3 + paid * 5;
 }
 
+/** How many passout years are in a department's alumni pool. */
+export function departmentBatchPoolSize(
+  departmentCode,
+  endYear = ALUMNI_BATCH_POOL_END_YEAR
+) {
+  const start =
+    DEPARTMENT_BATCH_START_YEAR[departmentCode] ??
+    Math.min(...Object.values(DEPARTMENT_BATCH_START_YEAR));
+  return Math.max(1, Number(endYear) - Number(start) + 1);
+}
+
+/**
+ * Weight so departments with fewer batches (e.g. MECH from 2013) are comparable.
+ * Prefer DEPARTMENT_SCORE_WEIGHT_OVERRIDE when set; else pool-ratio vs largest dept.
+ */
+export function departmentScoreWeight(
+  departmentCode,
+  endYear = ALUMNI_BATCH_POOL_END_YEAR
+) {
+  const override = DEPARTMENT_SCORE_WEIGHT_OVERRIDE[departmentCode];
+  if (override != null && Number.isFinite(Number(override))) {
+    return Number(override);
+  }
+  const pools = (DEPARTMENTS.length ? DEPARTMENTS : Object.keys(DEPARTMENT_BATCH_START_YEAR)).map(
+    (d) => departmentBatchPoolSize(typeof d === "string" ? d : d.value, endYear)
+  );
+  const baseline = Math.max(...pools, 1);
+  const pool = departmentBatchPoolSize(departmentCode, endYear);
+  return baseline / pool;
+}
+
+export function weightedLeaderboardScore(rawScore, departmentCode) {
+  const weight = departmentScoreWeight(departmentCode);
+  return Math.round((Number(rawScore) || 0) * weight);
+}
+
+export function scoreWeightLabel(departmentCode) {
+  const weight = departmentScoreWeight(departmentCode);
+  if (Math.abs(weight - 1) < 0.001) return "";
+  const start = DEPARTMENT_BATCH_START_YEAR[departmentCode];
+  const pool = departmentBatchPoolSize(departmentCode);
+  return `×${weight.toFixed(2)} batch weight (since ${start}; ${pool} batch-years)`;
+}
+
 function compareLeaderRows(a, b) {
   if (b.score !== a.score) return b.score - a.score;
+  if (b.rawScore !== a.rawScore && a.rawScore != null && b.rawScore != null) {
+    return b.rawScore - a.rawScore;
+  }
   if (b.paid !== a.paid) return b.paid - a.paid;
   if (b.willing !== a.willing) return b.willing - a.willing;
   if (b.total !== a.total) return b.total - a.total;
   return (a.label || a.name || "").localeCompare(b.label || b.name || "");
 }
 
-export function volunteerBreakdown(contacts) {
+export function volunteerBreakdown(contacts, { applyBatchWeight = true } = {}) {
   const byVolunteer = new Map();
   (contacts || []).forEach((c) => {
     const id = c.createdByUserId || c.createdByName || "unknown";
@@ -1084,6 +1135,8 @@ export function volunteerBreakdown(contacts) {
 
   return [...byVolunteer.values()].map((v) => {
     const stats = summarizeContacts(v.contacts);
+    const rawScore = scoreContactStats(stats);
+    const scoreWeight = applyBatchWeight ? departmentScoreWeight(v.department) : 1;
     return {
       userId: v.userId,
       name: v.name,
@@ -1091,31 +1144,48 @@ export function volunteerBreakdown(contacts) {
       department: v.department,
       team: v.team,
       ...stats,
-      score: scoreContactStats(stats),
+      rawScore,
+      scoreWeight,
+      score: applyBatchWeight
+        ? weightedLeaderboardScore(rawScore, v.department)
+        : rawScore,
     };
   });
 }
 
-export function rankDepartments(contacts, departments = []) {
+export function rankDepartments(contacts, departments = [], { applyBatchWeight = true } = {}) {
   return departmentBreakdown(contacts, departments)
-    .map((row) => ({ ...row, score: scoreContactStats(row) }))
+    .map((row) => {
+      const rawScore = scoreContactStats(row);
+      const scoreWeight = applyBatchWeight
+        ? departmentScoreWeight(row.department)
+        : 1;
+      return {
+        ...row,
+        rawScore,
+        scoreWeight,
+        score: applyBatchWeight
+          ? weightedLeaderboardScore(rawScore, row.department)
+          : rawScore,
+      };
+    })
     .filter((row) => row.total > 0)
     .sort(compareLeaderRows)
     .map((row, i) => ({ ...row, rank: i + 1 }));
 }
 
-export function rankVolunteers(contacts) {
-  return volunteerBreakdown(contacts)
+export function rankVolunteers(contacts, options = {}) {
+  return volunteerBreakdown(contacts, options)
     .filter((row) => row.total > 0)
     .sort(compareLeaderRows)
     .map((row, i) => ({ ...row, rank: i + 1 }));
 }
 
-export function buildLeaderboardData(contacts, departments = []) {
+export function buildLeaderboardData(contacts, departments = [], options = {}) {
   const stats = summarizeContacts(contacts);
   return {
     stats,
-    departments: rankDepartments(contacts, departments),
-    volunteers: rankVolunteers(contacts),
+    departments: rankDepartments(contacts, departments, options),
+    volunteers: rankVolunteers(contacts, options),
   };
 }
