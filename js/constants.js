@@ -133,8 +133,11 @@ export const JOB_SECTORS = [
 export const DEFAULT_REGISTRATION = {
   feeAmount: 0,
   feeCurrency: "INR",
-  feeNote: "LEGECI event registration fee",
+  feeNote: "LEGECI event registration fee (per person)",
 };
+
+/** Soft cap for party size on one alumni registration record. */
+export const MAX_MEMBERS_ATTENDING = 50;
 
 export const DEFAULT_TEAMS = [
   { id: "media", name: "Media team", active: true },

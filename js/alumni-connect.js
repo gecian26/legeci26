@@ -22,6 +22,7 @@ import {
   DEPARTMENT_BATCH_START_YEAR,
   DEPARTMENT_SCORE_WEIGHT_OVERRIDE,
   ALUMNI_BATCH_POOL_END_YEAR,
+  MAX_MEMBERS_ATTENDING,
   escapeHtml,
 } from "./constants.js";
 
@@ -63,6 +64,92 @@ export function formatFee(settings) {
   } catch {
     return `${currency} ${amount}`;
   }
+}
+
+export function formatINRAmount(amount, currency = "INR") {
+  const n = Number(amount) || 0;
+  try {
+    return new Intl.NumberFormat("en-IN", {
+      style: "currency",
+      currency,
+      maximumFractionDigits: 0,
+    }).format(n);
+  } catch {
+    return `${currency} ${n}`;
+  }
+}
+
+/** Per-person fee rate stored on the contact (or settings fallback). */
+export function contactFeeUnitAmount(contact, feeSettings) {
+  const fromContact = Number(contact?.feeAmount);
+  if (fromContact > 0) return fromContact;
+  return Number(feeSettings?.feeAmount) || 0;
+}
+
+/** Party size for one alumni registration (defaults to 1). */
+export function normalizeMembersAttending(value) {
+  const n = Math.floor(Number(value));
+  if (!Number.isFinite(n) || n < 1) return 1;
+  return Math.min(n, MAX_MEMBERS_ATTENDING);
+}
+
+export function contactMembersAttending(contact) {
+  return normalizeMembersAttending(contact?.membersAttending);
+}
+
+export function isRegistrationDue(status) {
+  return status === "paid" || status === "pending_payment";
+}
+
+/** Total fee for a contact = per-person rate × members attending. */
+export function contactFeeLineTotal(contact, feeSettings) {
+  if (!isRegistrationDue(contact?.registrationStatus)) return 0;
+  return (
+    contactFeeUnitAmount(contact, feeSettings) * contactMembersAttending(contact)
+  );
+}
+
+export function membersFeeHintText(contact, feeSettings) {
+  const unit = contactFeeUnitAmount(contact, feeSettings);
+  const members = contactMembersAttending(contact);
+  const currency = contact?.feeCurrency || feeSettings?.feeCurrency || "INR";
+  if (unit <= 0) return `${members} attending`;
+  const total = unit * members;
+  return `${members} × ${formatINRAmount(unit, currency)} = ${formatINRAmount(total, currency)}`;
+}
+
+/** Keep the live fee total hint in sync with members / registration fields. */
+export function wireMembersFeeHint(prefix = "ac", feeSettings = null) {
+  const membersEl = document.getElementById(`${prefix}Members`);
+  const regEl = document.getElementById(`${prefix}Registration`);
+  const hintEl = document.getElementById(`${prefix}MembersFeeHint`);
+  const wrap = document.getElementById(`${prefix}MembersWrap`);
+  if (!membersEl || !hintEl) return;
+
+  const refresh = () => {
+    const registrationStatus = regEl?.value || "not_registered";
+    const members = normalizeMembersAttending(membersEl.value);
+    membersEl.value = String(members);
+    const unit = Number(feeSettings?.feeAmount) || 0;
+    const currency = feeSettings?.feeCurrency || "INR";
+    if (wrap) {
+      wrap.classList.toggle("ac-members-wrap--muted", !isRegistrationDue(registrationStatus));
+    }
+    if (!isRegistrationDue(registrationStatus)) {
+      hintEl.textContent = "Set registration to pending/paid, then enter how many people are attending.";
+      return;
+    }
+    if (unit <= 0) {
+      hintEl.textContent = `${members} attending (fee rate not configured yet)`;
+      return;
+    }
+    hintEl.textContent = `${members} × ${formatINRAmount(unit, currency)} = ${formatINRAmount(unit * members, currency)}`;
+  };
+
+  membersEl.addEventListener("input", refresh);
+  membersEl.addEventListener("change", refresh);
+  regEl?.addEventListener("change", refresh);
+  refresh();
 }
 
 export function labelWillingness(value) {
@@ -181,23 +268,13 @@ export function passoutYearSearchFieldHtml(prefix, selected = "", years = null) 
     <p class="form-hint" style="margin-top:0.35rem;">Type to search, then pick a year from the suggestions.</p>`;
 }
 
-export function alumniContactFormHtml(prefix = "ac", contact = {}, feeLabel = "") {
+export function alumniContactFormHtml(prefix = "ac", contact = {}, feeLabel = "", { minimal = false } = {}) {
   const c = contact || {};
-  return `
+  const extraFields = `
     <div class="form-row">
-      <div class="form-group">
-        <label for="${prefix}Name">Alumni Name <span class="required">*</span></label>
-        <input type="text" id="${prefix}Name" required value="${escapeHtml(c.alumniName || "")}" placeholder="Full name">
-      </div>
       <div class="form-group">
         <label for="${prefix}Email">Email</label>
         <input type="email" id="${prefix}Email" value="${escapeHtml(c.email || "")}" placeholder="alumni@email.com">
-      </div>
-    </div>
-    <div class="form-row">
-      <div class="form-group">
-        <label for="${prefix}Whatsapp">WhatsApp Number <span class="required">*</span></label>
-        <input type="tel" id="${prefix}Whatsapp" required value="${escapeHtml(c.whatsapp || "")}" placeholder="10–15 digits">
       </div>
       <div class="form-group">
         <label for="${prefix}Mobile">Mobile Number</label>
@@ -216,6 +293,18 @@ export function alumniContactFormHtml(prefix = "ac", contact = {}, feeLabel = ""
       <div class="form-group">
         <label for="${prefix}JobSector">Job Sector</label>
         <select id="${prefix}JobSector">${jobSectorOptionsHtml(c.jobSector || "")}</select>
+      </div>
+    </div>`;
+
+  return `
+    <div class="form-row">
+      <div class="form-group">
+        <label for="${prefix}Name">Alumni Name <span class="required">*</span></label>
+        <input type="text" id="${prefix}Name" required value="${escapeHtml(c.alumniName || "")}" placeholder="Full name">
+      </div>
+      <div class="form-group">
+        <label for="${prefix}Whatsapp">WhatsApp Number <span class="required">*</span></label>
+        <input type="tel" id="${prefix}Whatsapp" required value="${escapeHtml(c.whatsapp || "")}" placeholder="10–15 digits">
       </div>
     </div>
     <div class="form-row">
@@ -236,13 +325,38 @@ export function alumniContactFormHtml(prefix = "ac", contact = {}, feeLabel = ""
         <select id="${prefix}Registration">
           ${optionsHtml(REGISTRATION_OPTIONS, c.registrationStatus || "not_registered")}
         </select>
-        ${feeLabel ? `<p class="form-hint">Configured fee: <strong>${escapeHtml(feeLabel)}</strong></p>` : ""}
+        ${feeLabel ? `<p class="form-hint">Fee rate (per person): <strong>${escapeHtml(feeLabel)}</strong></p>` : ""}
       </div>
-      <div class="form-group">
-        <label for="${prefix}Notes">Remarks</label>
-        <input type="text" id="${prefix}Notes" value="${escapeHtml(c.notes || "")}" placeholder="Optional notes">
+      <div class="form-group" id="${prefix}MembersWrap">
+        <label for="${prefix}Members">Members attending</label>
+        <div class="members-stepper members-stepper--form">
+          <button type="button" class="members-stepper__btn" data-members-form-delta="-1" aria-label="Fewer members">−</button>
+          <input
+            type="number"
+            id="${prefix}Members"
+            min="1"
+            max="${MAX_MEMBERS_ATTENDING}"
+            step="1"
+            value="${escapeHtml(String(normalizeMembersAttending(c.membersAttending)))}"
+            inputmode="numeric"
+          >
+          <button type="button" class="members-stepper__btn" data-members-form-delta="1" aria-label="More members">+</button>
+        </div>
+        <p class="form-hint" id="${prefix}MembersFeeHint">Total = members × fee rate</p>
       </div>
-    </div>`;
+    </div>
+    <div class="form-group">
+      <label for="${prefix}Notes">Remarks</label>
+      <input type="text" id="${prefix}Notes" value="${escapeHtml(c.notes || "")}" placeholder="Optional notes">
+    </div>
+    ${
+      minimal
+        ? `<details class="ac-form-more">
+            <summary>More details (email, company, address…)</summary>
+            <div class="ac-form-more__body">${extraFields}</div>
+          </details>`
+        : extraFields
+    }`;
 }
 
 export function readAlumniContactForm(prefix = "ac") {
@@ -261,6 +375,9 @@ export function readAlumniContactForm(prefix = "ac") {
   const willingness = document.getElementById(`${prefix}Willingness`)?.value || "undecided";
   const registrationStatus =
     document.getElementById(`${prefix}Registration`)?.value || "not_registered";
+  const membersAttending = normalizeMembersAttending(
+    document.getElementById(`${prefix}Members`)?.value
+  );
   const notes = document.getElementById(`${prefix}Notes`)?.value.trim() || "";
 
   const errors = [];
@@ -284,6 +401,7 @@ export function readAlumniContactForm(prefix = "ac") {
       batch,
       willingness,
       registrationStatus,
+      membersAttending,
       notes,
     },
   };
@@ -462,6 +580,7 @@ export function contactDetailFieldsHtml(c) {
       ${detailField("Address", c.address)}
       ${detailField("Willingness", labelWillingness(c.willingness))}
       ${detailField("Registration", labelRegistration(c.registrationStatus))}
+      ${detailField("Members attending", contactMembersAttending(c))}
       ${detailField("Remarks", c.notes || c.feeRemarks)}
       ${detailField("Recorded by", c.createdByName || c.createdByUserId)}
       ${detailField("Department", c.department)}
@@ -653,20 +772,28 @@ export function duplicateSuggestionsHtml(groups, { canManage = false } = {}) {
 
 export function contactsTableHtml(
   contacts,
-  { showVolunteer = false, editable = false, inlineStatus = false } = {}
+  {
+    showVolunteer = false,
+    editable = false,
+    inlineStatus = false,
+    showMembers = false,
+    feeSettings = null,
+    minimal = false,
+  } = {}
 ) {
   if (!contacts.length) {
     return '<p class="empty-state">No alumni contacts recorded yet.</p>';
   }
   return `
-    <table class="data-table">
+    <div class="table-scroll">
+    <table class="data-table${minimal ? " data-table--dense" : ""}">
       <thead>
         <tr>
           <th>Alumni</th>
-          <th>WhatsApp</th>
-          <th>Passout</th>
+          ${minimal ? "" : "<th>WhatsApp</th><th>Passout</th>"}
           <th>Willingness</th>
           <th>Registration</th>
+          ${showMembers ? "<th>Members</th>" : ""}
           ${showVolunteer ? "<th>Volunteer</th>" : ""}
         </tr>
       </thead>
@@ -685,6 +812,43 @@ export function contactsTableHtml(
                 </select>`
               : statusBadgeHtml("registration", c.registrationStatus);
 
+            const members = contactMembersAttending(c);
+            const due = isRegistrationDue(c.registrationStatus);
+            const membersCell = showMembers
+              ? inlineStatus
+                ? `<div class="members-cell ${due ? "" : "members-cell--muted"}" data-members-cell="${escapeHtml(c.id)}">
+                    <div class="members-stepper">
+                      <button type="button" class="members-stepper__btn" data-members-delta="-1" data-contact-id="${escapeHtml(c.id)}" aria-label="Fewer members" ${due ? "" : "disabled"}>−</button>
+                      <input
+                        type="number"
+                        class="members-stepper__input"
+                        min="1"
+                        max="${MAX_MEMBERS_ATTENDING}"
+                        step="1"
+                        value="${members}"
+                        data-members-input
+                        data-contact-id="${escapeHtml(c.id)}"
+                        inputmode="numeric"
+                        ${due ? "" : "disabled"}
+                        title="${due ? "How many people are attending" : "Set registration first"}"
+                      >
+                      <button type="button" class="members-stepper__btn" data-members-delta="1" data-contact-id="${escapeHtml(c.id)}" aria-label="More members" ${due ? "" : "disabled"}>+</button>
+                    </div>
+                    <small class="members-fee-hint" data-members-hint="${escapeHtml(c.id)}">${
+                      due
+                        ? escapeHtml(membersFeeHintText(c, feeSettings))
+                        : "Set registration first"
+                    }</small>
+                  </div>`
+                : due
+                  ? `<strong>${members}</strong>${
+                      minimal
+                        ? ""
+                        : `<br><small style="color:var(--slate-500)">${escapeHtml(membersFeeHintText(c, feeSettings))}</small>`
+                    }`
+                  : "—"
+              : "";
+
             const editIcon = editable
               ? `<button type="button" class="icon-btn" data-edit-contact="${escapeHtml(c.id)}" title="Edit details" aria-label="Edit ${escapeHtml(c.alumniName || "contact")}">
                   <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -694,28 +858,56 @@ export function contactsTableHtml(
                 </button>`
               : "";
 
+            const nameSub = minimal
+              ? c.whatsapp
+                ? `<br><small style="color:var(--slate-500)">${escapeHtml(c.whatsapp)}${
+                    c.batch || c.passoutYear ? ` · ${escapeHtml(c.batch || c.passoutYear)}` : ""
+                  }</small>`
+                : c.batch || c.passoutYear
+                  ? `<br><small style="color:var(--slate-500)">${escapeHtml(c.batch || c.passoutYear)}</small>`
+                  : ""
+              : `${c.email ? `<br><small style="color:var(--slate-500)">${escapeHtml(c.email)}</small>` : ""}${
+                  c.company ? `<br><small style="color:var(--slate-500)">${escapeHtml(c.company)}</small>` : ""
+                }`;
+
             return `
           <tr>
             <td>
               <div class="contact-name-cell">
                 <div>
                   <strong>${escapeHtml(c.alumniName)}</strong>
-                  ${c.email ? `<br><small style="color:var(--slate-500)">${escapeHtml(c.email)}</small>` : ""}
-                  ${c.company ? `<br><small style="color:var(--slate-500)">${escapeHtml(c.company)}</small>` : ""}
+                  ${nameSub}
                 </div>
                 ${editIcon}
               </div>
             </td>
-            <td>${escapeHtml(c.whatsapp || "—")}</td>
-            <td>${escapeHtml(c.batch || c.passoutYear || "—")}</td>
+            ${
+              minimal
+                ? ""
+                : `<td>${escapeHtml(c.whatsapp || "—")}</td>
+                   <td>${escapeHtml(c.batch || c.passoutYear || "—")}</td>`
+            }
             <td>${willingnessCell}</td>
             <td>${registrationCell}</td>
+            ${showMembers ? `<td>${membersCell}</td>` : ""}
             ${showVolunteer ? `<td>${escapeHtml(c.createdByName || c.createdByUserId || "—")}</td>` : ""}
           </tr>`;
           })
           .join("")}
       </tbody>
-    </table>`;
+    </table>
+    </div>`;
+}
+
+export function compactAlumniStatsHtml(stats) {
+  const s = stats || summarizeContacts([]);
+  return `
+    <div class="ac-compact-stats" aria-label="Department summary">
+      <div class="ac-compact-stat"><strong>${s.total}</strong><span>Contacted</span></div>
+      <div class="ac-compact-stat ac-compact-stat--good"><strong>${s.willing}</strong><span>Willing</span></div>
+      <div class="ac-compact-stat"><strong>${s.registered}</strong><span>Registered</span></div>
+      <div class="ac-compact-stat ac-compact-stat--gold"><strong>${s.paid}</strong><span>Paid</span></div>
+    </div>`;
 }
 
 /** Load all alumni contacts (admin consolidated view). */
@@ -854,6 +1046,7 @@ export function alumniFiltersHtml(prefix, options = {}) {
   const {
     showDepartment = false,
     showValidity = false,
+    compact = false,
     departments = [],
     batches = [],
     sectors = [],
@@ -877,6 +1070,44 @@ export function alumniFiltersHtml(prefix, options = {}) {
     departments
       .map((d) => `<option value="${escapeHtml(d.value)}">${escapeHtml(d.label || d.value)}</option>`)
       .join("");
+
+  if (compact) {
+    return `
+    <div class="ac-filters ac-filters--compact" id="${prefix}Filters">
+      <div class="form-row">
+        <div class="form-group">
+          <label for="${prefix}Search">Search</label>
+          <input type="search" id="${prefix}Search" placeholder="Name or WhatsApp…">
+        </div>
+        <div class="form-group">
+          <label for="${prefix}Willingness">Willingness</label>
+          <select id="${prefix}Willingness">
+            <option value="">All</option>
+            ${optionsHtml(WILLINGNESS_OPTIONS)}
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="${prefix}Registration">Registration</label>
+          <select id="${prefix}Registration">
+            <option value="">All</option>
+            ${optionsHtml(REGISTRATION_OPTIONS)}
+          </select>
+        </div>
+        ${
+          volunteers.length
+            ? `<div class="form-group">
+                <label for="${prefix}Volunteer">Volunteer</label>
+                <select id="${prefix}Volunteer">${volunteerOpts}</select>
+              </div>`
+            : ""
+        }
+      </div>
+      <div style="display:flex;gap:0.75rem;flex-wrap:wrap;">
+        <button type="button" class="btn btn--primary btn--sm" id="${prefix}ApplyFilters">Apply</button>
+        <button type="button" class="btn btn--ghost btn--sm" id="${prefix}ResetFilters">Reset</button>
+      </div>
+    </div>`;
+  }
 
   return `
     <div class="ac-filters" id="${prefix}Filters">

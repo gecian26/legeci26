@@ -30,6 +30,11 @@ import {
   updateAlumniContact,
   saveAlumniContact,
   statusBadgeHtml,
+  contactFeeUnitAmount,
+  contactFeeLineTotal,
+  contactMembersAttending,
+  normalizeMembersAttending,
+  membersFeeHintText,
 } from "./alumni-connect.js";
 
 function todayISO() {
@@ -186,9 +191,8 @@ export function summarizeAccounts(expenses) {
 }
 
 export function contactFeeAmount(contact, feeSettings) {
-  const fromContact = Number(contact?.feeAmount);
-  if (fromContact > 0) return fromContact;
-  return Number(feeSettings?.feeAmount) || 0;
+  // Line total (rate × members) for finance totals and displays.
+  return contactFeeLineTotal(contact, feeSettings);
 }
 
 export function summarizeRegistrationFees(contacts, feeSettings) {
@@ -196,13 +200,17 @@ export function summarizeRegistrationFees(contacts, feeSettings) {
   const feeAmount = Number(feeSettings?.feeAmount) || 0;
   const paid = list.filter((c) => c.registrationStatus === "paid");
   const pending = list.filter((c) => c.registrationStatus === "pending_payment");
-  const receivedTotal = paid.reduce((s, c) => s + contactFeeAmount(c, feeSettings), 0);
-  const pendingTotal = pending.reduce((s, c) => s + contactFeeAmount(c, feeSettings), 0);
+  const receivedTotal = paid.reduce((s, c) => s + contactFeeLineTotal(c, feeSettings), 0);
+  const pendingTotal = pending.reduce((s, c) => s + contactFeeLineTotal(c, feeSettings), 0);
+  const paidMembers = paid.reduce((s, c) => s + contactMembersAttending(c), 0);
+  const pendingMembers = pending.reduce((s, c) => s + contactMembersAttending(c), 0);
   return {
     feeAmount,
     feeNote: feeSettings?.feeNote || "",
     paidCount: paid.length,
     pendingCount: pending.length,
+    paidMembers,
+    pendingMembers,
     receivedTotal,
     pendingTotal,
     expectedTotal: receivedTotal + pendingTotal,
@@ -210,12 +218,13 @@ export function summarizeRegistrationFees(contacts, feeSettings) {
 }
 
 export async function setAlumniFeeReceived(contact, received, feeSettings, session, paymentMode = "cash") {
-  const feeAmount = contactFeeAmount(contact, feeSettings);
+  const feeAmount = contactFeeUnitAmount(contact, feeSettings);
   const feeCurrency = contact.feeCurrency || feeSettings?.feeCurrency || "INR";
   const payload = {
     registrationStatus: received ? "paid" : "pending_payment",
     feeAmount,
     feeCurrency,
+    membersAttending: contactMembersAttending(contact),
     feeReceivedAt: received ? todayISO() : "",
     feePaymentMode: received ? paymentMode || "cash" : "",
     feeReceivedBy: received
@@ -270,6 +279,7 @@ export async function saveManualRegistrationFee(data, feeSettings, session) {
     source: "manual_fee",
     feeAmount,
     feeCurrency,
+    membersAttending: normalizeMembersAttending(data.membersAttending),
     feeReceivedAt: paid ? data.feeReceivedAt || todayISO() : "",
     feePaymentMode: paid ? paymentMode : "",
     feeReceivedBy: paid
@@ -396,12 +406,12 @@ export async function mountTreasurerAccounts(wrap, { toast, session, readOnly = 
       <div class="acct-overview">
         <div class="acct-card">
           <h3 class="acct-card__title">Registration fees</h3>
-          <p class="form-hint" style="margin-top:0;">Fee rate: <strong>${formatINR(fees.feeAmount)}</strong>${
+          <p class="form-hint" style="margin-top:0;">Fee rate: <strong>${formatINR(fees.feeAmount)}</strong> per person${
             fees.feeNote ? ` · ${escapeHtml(fees.feeNote)}` : ""
           }</p>
           <ul class="acct-cat-list">
-            <li><span>Received (${fees.paidCount})</span><strong>${formatINR(fees.receivedTotal)}</strong></li>
-            <li><span>Pending (${fees.pendingCount})</span><strong>${formatINR(fees.pendingTotal)}</strong></li>
+            <li><span>Received (${fees.paidCount} · ${fees.paidMembers || 0} people)</span><strong>${formatINR(fees.receivedTotal)}</strong></li>
+            <li><span>Pending (${fees.pendingCount} · ${fees.pendingMembers || 0} people)</span><strong>${formatINR(fees.pendingTotal)}</strong></li>
           </ul>
           ${
             pendingFees.length
@@ -415,7 +425,8 @@ export async function mountTreasurerAccounts(wrap, { toast, session, readOnly = 
                         <small>${escapeHtml(c.department || "—")}${c.batch ? ` · ${escapeHtml(c.batch)}` : ""}</small>
                       </div>
                       <div class="acct-open-list__right">
-                        <strong>${formatINR(contactFeeAmount(c, feeSettings))}</strong>
+                        <strong>${formatINR(contactFeeLineTotal(c, feeSettings))}</strong>
+                        <small style="display:block;text-align:right;color:var(--slate-500);">${escapeHtml(membersFeeHintText(c, feeSettings))}</small>
                         ${
                           readOnly
                             ? ""
@@ -533,13 +544,13 @@ export async function mountTreasurerAccounts(wrap, { toast, session, readOnly = 
         <div class="acct-fees__head">
           <div>
             <h3 class="acct-card__title">Alumni registration fees</h3>
-            <p class="form-hint" style="margin:0;">Configured fee: <strong>${formatINR(fees.feeAmount)}</strong>${
+            <p class="form-hint" style="margin:0;">Configured fee: <strong>${formatINR(fees.feeAmount)}</strong> per person${
               fees.feeNote ? ` · ${escapeHtml(fees.feeNote)}` : ""
-            }.${readOnly ? "" : " Mark when payment is received, or add a new fee entry."}</p>
+            }. Total = members × fee.${readOnly ? "" : " Mark when payment is received, or add a new fee entry."}</p>
           </div>
           <div class="acct-fees__stats">
-            <span><strong>${formatINR(fees.receivedTotal)}</strong> received (${fees.paidCount})</span>
-            <span><strong>${formatINR(fees.pendingTotal)}</strong> pending (${fees.pendingCount})</span>
+            <span><strong>${formatINR(fees.receivedTotal)}</strong> received (${fees.paidCount} · ${fees.paidMembers || 0} people)</span>
+            <span><strong>${formatINR(fees.pendingTotal)}</strong> pending (${fees.pendingCount} · ${fees.pendingMembers || 0} people)</span>
             ${
               readOnly
                 ? ""
@@ -565,7 +576,8 @@ export async function mountTreasurerAccounts(wrap, { toast, session, readOnly = 
                       <th>Alumni</th>
                       <th>Department</th>
                       <th>Status</th>
-                      <th>Fee</th>
+                      <th>Members</th>
+                      <th>Fee total</th>
                       <th>Remarks</th>
                       <th>${readOnly ? "Payment" : "Received?"}</th>
                     </tr>
@@ -574,7 +586,9 @@ export async function mountTreasurerAccounts(wrap, { toast, session, readOnly = 
                     ${rows
                       .map((c) => {
                         const paid = c.registrationStatus === "paid";
-                        const amount = contactFeeAmount(c, feeSettings);
+                        const amount = contactFeeLineTotal(c, feeSettings);
+                        const members = contactMembersAttending(c);
+                        const unit = contactFeeUnitAmount(c, feeSettings);
                         return `
                       <tr>
                         <td>
@@ -584,8 +598,10 @@ export async function mountTreasurerAccounts(wrap, { toast, session, readOnly = 
                         </td>
                         <td>${escapeHtml(c.department || "—")}</td>
                         <td>${statusBadgeHtml("registration", c.registrationStatus || "not_registered")}</td>
+                        <td><strong>${members}</strong></td>
                         <td>
                           ${formatINR(amount)}
+                          ${unit > 0 ? `<br><small style="color:var(--slate-500)">${members} × ${formatINR(unit)}</small>` : ""}
                           ${paid && c.feeReceivedAt ? `<br><small style="color:var(--slate-500)">${escapeHtml(formatDateShort(c.feeReceivedAt) || c.feeReceivedAt)}${c.feePaymentMode ? ` · ${escapeHtml(paymentModeLabel(c.feePaymentMode))}` : ""}</small>` : ""}
                         </td>
                         <td>${remarksCellHtml(c)}</td>
@@ -658,8 +674,12 @@ export async function mountTreasurerAccounts(wrap, { toast, session, readOnly = 
         </div>
         <div class="form-row">
           <div class="form-group">
-            <label for="acctFeeAmount">Fee amount (₹) <span class="required">*</span></label>
+            <label for="acctFeeAmount">Fee per person (₹) <span class="required">*</span></label>
             <input type="number" id="acctFeeAmount" required min="0" step="1" placeholder="${escapeHtml(String(Number(feeSettings?.feeAmount) || "0"))}" value="${escapeHtml(defaultAmount)}">
+          </div>
+          <div class="form-group">
+            <label for="acctFeeMembers">Members attending</label>
+            <input type="number" id="acctFeeMembers" min="1" max="50" step="1" value="${escapeHtml(String(normalizeMembersAttending(prefill.membersAttending)))}">
           </div>
           <div class="form-group">
             <label for="acctFeeMode">Payment mode</label>
@@ -670,6 +690,7 @@ export async function mountTreasurerAccounts(wrap, { toast, session, readOnly = 
             <input type="date" id="acctFeeDate" value="${escapeHtml(prefill.feeReceivedAt || todayISO())}">
           </div>
         </div>
+        <p class="form-hint" style="margin-top:-0.35rem;">Total collected = members × fee per person.</p>
         <div class="form-group">
           <label class="checkbox-label" for="acctFeeReceived">
             <input type="checkbox" id="acctFeeReceived" ${received ? "checked" : ""}>
@@ -1102,6 +1123,7 @@ export async function mountTreasurerAccounts(wrap, { toast, session, readOnly = 
               batch: document.getElementById("acctFeeBatch")?.value,
               email: document.getElementById("acctFeeEmail")?.value,
               feeAmount,
+              membersAttending: document.getElementById("acctFeeMembers")?.value,
               feePaymentMode: document.getElementById("acctFeeMode")?.value,
               feeReceivedAt: document.getElementById("acctFeeDate")?.value,
               feeReceived,

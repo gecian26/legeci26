@@ -66,6 +66,12 @@ import {
   departmentBreakdownTableHtml,
   statusSelectClass,
   statusBadgeHtml,
+  wireMembersFeeHint,
+  normalizeMembersAttending,
+  contactMembersAttending,
+  isRegistrationDue,
+  membersFeeHintText,
+  compactAlumniStatsHtml,
 } from "../js/alumni-connect.js";
 import { downloadAlumniContactsPdf } from "../js/alumni-contacts-pdf.js";
 import { loadLeaderboardPanel } from "../js/leaderboard.js";
@@ -157,7 +163,7 @@ function initPortal(session) {
     document.getElementById("alumniPanelTitle").textContent =
       `Alumni Contacted — ${deptName}`;
     document.getElementById("alumniPanelHint").textContent =
-      "Department-wide alumni contacted by volunteers in your department (view only). Record new contacts from My Tasks.";
+      "Quick department view — name, status, and who recorded each contact. Use My Tasks to add or update records.";
   } else if (session.role !== ROLES.FACULTY) {
     document.getElementById("navAlumni").hidden = true;
     document.getElementById("navLeaderboard").hidden = true;
@@ -333,8 +339,8 @@ async function loadFinanceDashboardSummary() {
     const fees = summarizeRegistrationFees(contacts, feeSettings);
     wrap.innerHTML = `
       <div class="acct-stat-grid">
-        <div class="acct-stat acct-stat--good"><div class="acct-stat__value">${formatINR(fees.receivedTotal)}</div><div class="acct-stat__label">Fees received (${fees.paidCount})</div></div>
-        <div class="acct-stat acct-stat--warn"><div class="acct-stat__value">${formatINR(fees.pendingTotal)}</div><div class="acct-stat__label">Fees pending (${fees.pendingCount})</div></div>
+        <div class="acct-stat acct-stat--good"><div class="acct-stat__value">${formatINR(fees.receivedTotal)}</div><div class="acct-stat__label">Fees received (${fees.paidCount} · ${fees.paidMembers || 0} people)</div></div>
+        <div class="acct-stat acct-stat--warn"><div class="acct-stat__value">${formatINR(fees.pendingTotal)}</div><div class="acct-stat__label">Fees pending (${fees.pendingCount} · ${fees.pendingMembers || 0} people)</div></div>
         <div class="acct-stat"><div class="acct-stat__value">${formatINR(s.totalExpenses)}</div><div class="acct-stat__label">Total expenses</div></div>
         <div class="acct-stat"><div class="acct-stat__value">${formatINR(s.totalOutstanding)}</div><div class="acct-stat__label">Not paid to person</div></div>
       </div>`;
@@ -1128,6 +1134,9 @@ async function loadDeptAlumniContacts(department) {
   if (!wrap) return;
   try {
     const isFaculty = currentSession?.role === ROLES.FACULTY;
+    if (!cachedRegistration) {
+      cachedRegistration = await loadRegistrationSettings();
+    }
     cachedDeptAlumniContacts = await loadContactsByDepartment(department, {
       includeInvalidated: isFaculty,
     });
@@ -1162,17 +1171,16 @@ function renderStudentDeptAlumniDashboard(preserveFilters = false) {
   const volunteers = [...volunteersMap.values()].sort((a, b) =>
     (a.displayName || "").localeCompare(b.displayName || "")
   );
-  const batches = uniqueSortedValues(contacts, (c) => c.batch || c.passoutYear);
-  const sectors = uniqueSortedValues(contacts, (c) => c.jobSector);
 
   wrap.innerHTML = `
-    <div class="ac-dashboard">
+    <div class="ac-dashboard ac-dashboard--minimal">
       <div id="facAcStats"></div>
-      <div id="facAcInsights"></div>
-      ${alumniFiltersHtml("facAc", { batches, sectors, volunteers })}
+      ${alumniFiltersHtml("facAc", { volunteers, compact: true })}
       <div>
-        <h3 class="ac-dashboard__subtitle">Contact details</h3>
-        <p class="ac-results-meta" id="facAcMeta"></p>
+        <div class="ac-dashboard__toolbar" style="margin-bottom:0.5rem;">
+          <h3 class="ac-dashboard__subtitle" style="margin:0;">Contacts</h3>
+          <p class="ac-results-meta" id="facAcMeta" style="margin:0;"></p>
+        </div>
         <div id="facAcTable"></div>
       </div>
     </div>`;
@@ -1185,8 +1193,6 @@ function renderStudentDeptAlumniDashboard(preserveFilters = false) {
     set("facAcSearch", prev.search);
     set("facAcWillingness", prev.willingness);
     set("facAcRegistration", prev.registrationStatus);
-    set("facAcBatch", prev.batch);
-    set("facAcSector", prev.jobSector);
     set("facAcVolunteer", prev.volunteerUserId);
   }
 
@@ -1197,12 +1203,10 @@ function renderStudentDeptAlumniDashboard(preserveFilters = false) {
       if (e.target.id === "facAcApplyFilters") {
         applyStudentDeptAlumniFilters();
       } else if (e.target.id === "facAcResetFilters") {
-        ["facAcSearch", "facAcWillingness", "facAcRegistration", "facAcBatch", "facAcSector", "facAcVolunteer"].forEach(
-          (id) => {
-            const el = document.getElementById(id);
-            if (el) el.value = "";
-          }
-        );
+        ["facAcSearch", "facAcWillingness", "facAcRegistration", "facAcVolunteer"].forEach((id) => {
+          const el = document.getElementById(id);
+          if (el) el.value = "";
+        });
         applyStudentDeptAlumniFilters();
       }
     });
@@ -1224,32 +1228,20 @@ function applyStudentDeptAlumniFilters() {
   const stats = summarizeContacts(filtered);
 
   const statsEl = document.getElementById("facAcStats");
-  const insightsEl = document.getElementById("facAcInsights");
   const metaEl = document.getElementById("facAcMeta");
   const tableEl = document.getElementById("facAcTable");
   if (!statsEl || !tableEl) return;
 
-  statsEl.innerHTML = statsCardsHtml(stats, { title: "Department summary" });
-  if (insightsEl) {
-    insightsEl.innerHTML = insightsHtml(stats, [
-      {
-        label: currentSession?.department || "Department",
-        department: currentSession?.department,
-        ...stats,
-      },
-    ]);
-  }
+  statsEl.innerHTML = compactAlumniStatsHtml(stats);
   if (metaEl) {
-    metaEl.textContent = `Showing ${filtered.length} of ${cachedDeptAlumniContacts.length} contacts`;
+    metaEl.textContent = `${filtered.length} of ${cachedDeptAlumniContacts.length}`;
   }
-  tableEl.innerHTML = `
-    <div class="status-legend" aria-label="Status color key">
-      <span class="status-legend__item"><span class="status-legend__dot status-legend__dot--green"></span> Willing / Paid</span>
-      <span class="status-legend__item"><span class="status-legend__dot status-legend__dot--orange"></span> Undecided / Payment pending</span>
-      <span class="status-legend__item"><span class="status-legend__dot status-legend__dot--red"></span> Not willing</span>
-      <span class="status-legend__item"><span class="status-legend__dot status-legend__dot--gray"></span> No response / Not registered</span>
-    </div>
-    ${facultyContactsDetailHtml(filtered, { showVolunteer: true, canManage: false, expandedId: "" })}`;
+  tableEl.innerHTML = contactsTableHtml(filtered, {
+    showVolunteer: true,
+    showMembers: true,
+    minimal: true,
+    feeSettings: cachedRegistration,
+  });
 }
 
 function renderFacultyAlumniDashboard(preserveFilters = false) {
@@ -1595,10 +1587,11 @@ function resetAlumniContactForm(session, task) {
     document.getElementById("alumniConnectHint").innerHTML = `
       Task: <strong>${escapeHtml(task.title)}</strong>
       · Department: <strong>${escapeHtml(task.department || session.department || "")}</strong>
-      · Fee: <strong>${escapeHtml(feeLabel)}</strong>`;
+      · Fee (per person): <strong>${escapeHtml(feeLabel)}</strong>`;
   }
   document.getElementById("alumniContactFormFields").innerHTML =
-    alumniContactFormHtml("ac", {}, feeLabel);
+    alumniContactFormHtml("ac", {}, feeLabel, { minimal: true });
+  wireAlumniMembersControls();
 }
 
 function fillAlumniContactFormForEdit(contact) {
@@ -1612,10 +1605,28 @@ function fillAlumniContactFormForEdit(contact) {
   document.getElementById("alumniContactCancelBtn").hidden = false;
   document.getElementById("alumniConnectHint").innerHTML = `
     Editing <strong>${escapeHtml(contact.alumniName)}</strong>.
-    Update willingness, registration status, or any other details, then click Update Contact.`;
+    Update status or members, then click Update Contact.`;
   document.getElementById("alumniContactFormFields").innerHTML =
-    alumniContactFormHtml("ac", contact, feeLabel);
+    alumniContactFormHtml("ac", contact, feeLabel, { minimal: true });
+  wireAlumniMembersControls();
   document.getElementById("alumniConnectCard").scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+function wireAlumniMembersControls() {
+  wireMembersFeeHint("ac", cachedRegistration);
+  const fields = document.getElementById("alumniContactFormFields");
+  if (!fields || fields.dataset.membersBound === "1") return;
+  fields.dataset.membersBound = "1";
+  fields.addEventListener("click", (e) => {
+    const btn = e.target.closest("[data-members-form-delta]");
+    if (!btn) return;
+    e.preventDefault();
+    const input = document.getElementById("acMembers");
+    if (!input) return;
+    const delta = Number(btn.dataset.membersFormDelta) || 0;
+    input.value = String(normalizeMembersAttending(Number(input.value) + delta));
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
 }
 
 function setupAlumniContactForm(session) {
@@ -1670,6 +1681,7 @@ function setupAlumniContactForm(session) {
           taskTitle: existing.taskTitle || "Alumni Connect",
           feeAmount: Number(existing.feeAmount ?? cachedRegistration?.feeAmount) || 0,
           feeCurrency: existing.feeCurrency || cachedRegistration?.feeCurrency || "INR",
+          membersAttending: normalizeMembersAttending(data.membersAttending),
           createdByUserId: existing.createdByUserId,
           createdByName: existing.createdByName || currentSession.displayName || currentSession.username,
         });
@@ -1706,6 +1718,7 @@ function setupAlumniContactForm(session) {
         taskTitle: task.title || "Alumni Connect",
         feeAmount: Number(cachedRegistration?.feeAmount) || 0,
         feeCurrency: cachedRegistration?.feeCurrency || "INR",
+        membersAttending: normalizeMembersAttending(data.membersAttending),
         createdByUserId: userId,
         createdByName: currentSession.displayName || currentSession.username,
       });
@@ -1733,7 +1746,13 @@ async function loadMyContacts(session, deptTaskId) {
   try {
     const contacts = await loadContactsByVolunteer(resolveUserId(session), deptTaskId);
     cachedMyContacts = contacts;
-    wrap.innerHTML = contactsTableHtml(contacts, { editable: true, inlineStatus: true });
+    wrap.innerHTML = contactsTableHtml(contacts, {
+      editable: true,
+      inlineStatus: true,
+      showMembers: true,
+      feeSettings: cachedRegistration,
+      minimal: true,
+    });
 
     wrap.querySelectorAll("[data-edit-contact]").forEach((btn) => {
       btn.addEventListener("click", () => {
@@ -1743,6 +1762,88 @@ async function loadMyContacts(session, deptTaskId) {
       });
     });
 
+    const refreshMembersUi = (contact) => {
+      const cell = wrap.querySelector(`[data-members-cell="${contact.id}"]`);
+      const input = wrap.querySelector(`[data-members-input][data-contact-id="${contact.id}"]`);
+      const hint = wrap.querySelector(`[data-members-hint="${contact.id}"]`);
+      const due = isRegistrationDue(contact.registrationStatus);
+      if (cell) cell.classList.toggle("members-cell--muted", !due);
+      if (input) {
+        input.disabled = !due;
+        input.value = String(contactMembersAttending(contact));
+      }
+      wrap.querySelectorAll(`[data-members-delta][data-contact-id="${contact.id}"]`).forEach((btn) => {
+        btn.disabled = !due;
+      });
+      if (hint) {
+        hint.textContent = due
+          ? membersFeeHintText(contact, cachedRegistration)
+          : "Set registration first";
+      }
+    };
+
+    const persistContactPatch = async (contact, patch, { successMessage } = {}) => {
+      const result = await requireAuth([ROLES.STUDENT]);
+      if (!result?.session) {
+        showToast(toast, "Session expired. Please sign in again.", "error");
+        window.location.href = "../login.html";
+        return false;
+      }
+      currentSession = result.session;
+      const userId = resolveUserId(currentSession);
+      if (contact.createdByUserId !== userId) {
+        showToast(toast, "You can only update contacts you recorded.", "error");
+        return false;
+      }
+
+      await updateAlumniContact(contact.id, {
+        alumniName: contact.alumniName,
+        email: contact.email || "",
+        whatsapp: contact.whatsapp || "",
+        mobile: contact.mobile || "",
+        address: contact.address || "",
+        company: contact.company || "",
+        jobSector: contact.jobSector || "",
+        batch: contact.batch || "",
+        willingness: contact.willingness || "undecided",
+        registrationStatus: contact.registrationStatus || "not_registered",
+        membersAttending: contactMembersAttending(contact),
+        notes: contact.notes || "",
+        department: contact.department || currentSession.department || "",
+        team: contact.team || currentSession.team || "",
+        deptTaskId: contact.deptTaskId || "",
+        parentTaskId: contact.parentTaskId || "",
+        taskTitle: contact.taskTitle || "Alumni Connect",
+        feeAmount: Number(contact.feeAmount ?? cachedRegistration?.feeAmount) || 0,
+        feeCurrency: contact.feeCurrency || cachedRegistration?.feeCurrency || "INR",
+        createdByUserId: contact.createdByUserId,
+        createdByName: contact.createdByName || currentSession.displayName || currentSession.username,
+        ...patch,
+      });
+
+      Object.assign(contact, patch);
+      if (editingContact?.id === contact.id) {
+        Object.assign(editingContact, patch);
+        if (patch.willingness != null) {
+          const el = document.getElementById("acWillingness");
+          if (el) el.value = patch.willingness;
+        }
+        if (patch.registrationStatus != null) {
+          const el = document.getElementById("acRegistration");
+          if (el) el.value = patch.registrationStatus;
+        }
+        if (patch.membersAttending != null) {
+          const el = document.getElementById("acMembers");
+          if (el) {
+            el.value = String(normalizeMembersAttending(patch.membersAttending));
+            el.dispatchEvent(new Event("input", { bubbles: true }));
+          }
+        }
+      }
+      if (successMessage) showToast(toast, successMessage, "success");
+      return true;
+    };
+
     wrap.querySelectorAll(".table-status-select").forEach((select) => {
       select.addEventListener("change", async () => {
         const contactId = select.dataset.contactId;
@@ -1751,70 +1852,86 @@ async function loadMyContacts(session, deptTaskId) {
         const contact = cachedMyContacts.find((c) => c.id === contactId);
         if (!contact || !field) return;
 
-        const result = await requireAuth([ROLES.STUDENT]);
-        if (!result?.session) {
-          showToast(toast, "Session expired. Please sign in again.", "error");
-          window.location.href = "../login.html";
-          return;
-        }
-        currentSession = result.session;
-        const userId = resolveUserId(currentSession);
-        if (contact.createdByUserId !== userId) {
-          showToast(toast, "You can only update contacts you recorded.", "error");
-          select.value = contact[field];
-          return;
-        }
-
+        const previous = contact[field];
         select.disabled = true;
         try {
-          await updateAlumniContact(contactId, {
-            alumniName: contact.alumniName,
-            email: contact.email || "",
-            whatsapp: contact.whatsapp || "",
-            mobile: contact.mobile || "",
-            address: contact.address || "",
-            company: contact.company || "",
-            jobSector: contact.jobSector || "",
-            batch: contact.batch || "",
-            willingness: field === "willingness" ? value : contact.willingness || "undecided",
-            registrationStatus:
-              field === "registrationStatus" ? value : contact.registrationStatus || "not_registered",
-            notes: contact.notes || "",
-            department: contact.department || currentSession.department || "",
-            team: contact.team || currentSession.team || "",
-            deptTaskId: contact.deptTaskId || "",
-            parentTaskId: contact.parentTaskId || "",
-            taskTitle: contact.taskTitle || "Alumni Connect",
-            feeAmount: Number(contact.feeAmount ?? cachedRegistration?.feeAmount) || 0,
-            feeCurrency: contact.feeCurrency || cachedRegistration?.feeCurrency || "INR",
-            createdByUserId: contact.createdByUserId,
-            createdByName: contact.createdByName || currentSession.displayName || currentSession.username,
+          const patch = { [field]: value };
+          if (
+            field === "registrationStatus" &&
+            isRegistrationDue(value) &&
+            !isRegistrationDue(previous)
+          ) {
+            patch.membersAttending = contactMembersAttending(contact);
+          }
+          const ok = await persistContactPatch(contact, patch, {
+            successMessage:
+              field === "willingness" ? "Willingness updated." : "Registration status updated.",
           });
-          contact[field] = value;
+          if (!ok) {
+            select.value = previous;
+            return;
+          }
           const toneKind = field === "willingness" ? "willingness" : "registration";
           select.className = statusSelectClass(toneKind, value);
-          showToast(
-            toast,
-            field === "willingness" ? "Willingness updated." : "Registration status updated.",
-            "success"
-          );
-
-          // Keep edit form in sync if this contact is open for editing
-          if (editingContact?.id === contactId) {
-            editingContact[field] = value;
-            const formField =
-              field === "willingness"
-                ? document.getElementById("acWillingness")
-                : document.getElementById("acRegistration");
-            if (formField) formField.value = value;
-          }
+          if (field === "registrationStatus") refreshMembersUi(contact);
         } catch (err) {
           console.error(err);
-          select.value = contact[field];
+          select.value = previous;
           showToast(toast, "Failed to update status.", "error");
         } finally {
           select.disabled = false;
         }
+      });
+    });
+
+    const saveMembers = async (contact, rawValue, { quiet } = {}) => {
+      if (!isRegistrationDue(contact.registrationStatus)) {
+        refreshMembersUi(contact);
+        showToast(toast, "Set registration to pending or paid first.", "error");
+        return;
+      }
+      const membersAttending = normalizeMembersAttending(rawValue);
+      if (membersAttending === contactMembersAttending(contact) && quiet) {
+        refreshMembersUi(contact);
+        return;
+      }
+      try {
+        const ok = await persistContactPatch(
+          contact,
+          { membersAttending },
+          { successMessage: quiet ? "" : "Members attending updated." }
+        );
+        if (!ok) {
+          refreshMembersUi(contact);
+          return;
+        }
+        refreshMembersUi(contact);
+      } catch (err) {
+        console.error(err);
+        refreshMembersUi(contact);
+        showToast(toast, "Failed to update members.", "error");
+      }
+    };
+
+    wrap.querySelectorAll("[data-members-delta]").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const contact = cachedMyContacts.find((c) => c.id === btn.dataset.contactId);
+        if (!contact) return;
+        const delta = Number(btn.dataset.membersDelta) || 0;
+        const next = normalizeMembersAttending(contactMembersAttending(contact) + delta);
+        btn.disabled = true;
+        await saveMembers(contact, next);
+        btn.disabled = !isRegistrationDue(contact.registrationStatus);
+      });
+    });
+
+    wrap.querySelectorAll("[data-members-input]").forEach((input) => {
+      input.addEventListener("change", async () => {
+        const contact = cachedMyContacts.find((c) => c.id === input.dataset.contactId);
+        if (!contact) return;
+        input.disabled = true;
+        await saveMembers(contact, input.value);
+        input.disabled = !isRegistrationDue(contact.registrationStatus);
       });
     });
   } catch (err) {
