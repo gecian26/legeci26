@@ -4,6 +4,7 @@ import {
   getDoc,
   updateDoc,
   serverTimestamp,
+  deleteField,
 } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-firestore.js";
 import { hashPassword, verifyPassword } from "./crypto.js";
 import { getSession, withSession } from "./auth.js";
@@ -11,6 +12,7 @@ import {
   USERS_COLLECTION,
   SESSIONS_COLLECTION,
   SESSION_KEY,
+  ROLES,
   normalizeUsername,
 } from "./constants.js";
 
@@ -68,6 +70,44 @@ export async function changePassword(currentPassword, newPassword) {
   return updated;
 }
 
+/** Admin sets a temporary password; user must change it on next login. */
+export async function adminResetUserPassword(targetUserId, newPassword) {
+  const session = getSession();
+  if (!session) throw new Error("NO_SESSION");
+  if (session.role !== ROLES.ADMIN) throw new Error("NOT_ADMIN");
+
+  const userId = normalizeUsername(targetUserId || "");
+  if (!userId) throw new Error("USER_NOT_FOUND");
+  if (!newPassword || newPassword.length < 8) throw new Error("WEAK_PASSWORD");
+
+  const userRef = doc(db, USERS_COLLECTION, userId);
+  const snap = await getDoc(userRef);
+  if (!snap.exists()) throw new Error("USER_NOT_FOUND");
+
+  const { passwordHash, salt } = await hashPassword(newPassword);
+  await updateDoc(
+    userRef,
+    withSession({
+      passwordHash,
+      salt,
+      mustChangePassword: true,
+      passwordChangedAt: deleteField(),
+      passwordResetAt: serverTimestamp(),
+      passwordResetBy: session.username || "admin",
+      updatedAt: serverTimestamp(),
+    })
+  );
+
+  return { userId, temporaryPassword: newPassword };
+}
+
+export function generateTemporaryPassword(length = 10) {
+  const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789";
+  const bytes = new Uint8Array(length);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, (b) => alphabet[b % alphabet.length]).join("");
+}
+
 export function getPasswordErrorMessage(error) {
   const map = {
     WRONG_PASSWORD: "Current password is incorrect.",
@@ -75,6 +115,7 @@ export function getPasswordErrorMessage(error) {
     SAME_PASSWORD: "New password must be different from the current password.",
     NO_SESSION: "Your session expired. Please sign in again.",
     USER_NOT_FOUND: "Account not found. Please contact the administrator.",
+    NOT_ADMIN: "Only an administrator can reset passwords.",
   };
   if (error?.code === "permission-denied") {
     return "Permission denied. Republish firestore.rules, then sign out and sign in again.";

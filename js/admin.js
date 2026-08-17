@@ -58,7 +58,10 @@ import {
   setupPasswordPanel,
   passwordFormHtml,
   renderPasswordPrompt,
-} from "../js/password.js";
+  adminResetUserPassword,
+  generateTemporaryPassword,
+  getPasswordErrorMessage,
+} from "../js/password.js?v=reset1";
 import {
   renderMeetupOverview,
   renderPreEventsOverview,
@@ -620,6 +623,9 @@ async function loadUsersTable() {
           <td>${escapeHtml(u.department || "—")}</td>
           <td><span class="badge ${u.active !== false ? "badge--published" : "badge--inactive"}">${u.active !== false ? "Active" : "Inactive"}</span></td>
           <td class="table-actions">
+            <button class="btn btn--ghost btn--sm" data-reset-pw="${escapeHtml(u.userId)}" data-label="${escapeHtml(u.displayName || u.username)}" data-suggest="${escapeHtml(u.mobile || u.username || "")}">
+              Reset password
+            </button>
             <button class="btn btn--ghost btn--sm" data-toggle="${u.userId}" data-active="${u.active !== false}">
               ${u.active !== false ? "Deactivate" : "Activate"}
             </button>
@@ -633,6 +639,13 @@ async function loadUsersTable() {
         <thead><tr><th>Name / Username</th><th>Role</th><th>Department</th><th>Status</th><th>Actions</th></tr></thead>
         <tbody>${rows}</tbody>
       </table>`;
+
+    wrap.querySelectorAll("[data-reset-pw]").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        if (!(await ensureAdminSession())) return;
+        await handleAdminPasswordReset(btn);
+      });
+    });
 
     wrap.querySelectorAll("[data-toggle]").forEach((btn) => {
       btn.addEventListener("click", async () => {
@@ -657,6 +670,48 @@ async function loadUsersTable() {
   } catch (err) {
     console.error(err);
     wrap.innerHTML = '<p class="empty-state">Failed to load users.</p>';
+  }
+}
+
+async function handleAdminPasswordReset(btn) {
+  const userId = btn.dataset.resetPw;
+  const label = btn.dataset.label || userId;
+  const suggest = (btn.dataset.suggest || "").trim();
+  const suggested =
+    suggest.length >= 8 ? suggest : generateTemporaryPassword(10);
+
+  const entered = prompt(
+    `Reset password for ${label}?\n\nEnter a temporary password (min 8 characters).\nSuggested: ${suggested}\n\nShare it with the user — they must change it after login.`,
+    suggested
+  );
+  if (entered === null) return;
+
+  const temporaryPassword = entered.trim();
+  if (temporaryPassword.length < 8) {
+    showToast(toast, "Temporary password must be at least 8 characters.", "error");
+    return;
+  }
+
+  try {
+    btn.disabled = true;
+    await adminResetUserPassword(userId, temporaryPassword);
+    showToast(
+      toast,
+      `Password reset for ${label}. Temporary password: ${temporaryPassword}`,
+      "success"
+    );
+    // Keep toast longer for copying
+    if (toast) {
+      clearTimeout(showToast._timer);
+      showToast._timer = setTimeout(() => {
+        toast.classList.remove("toast--visible");
+      }, 12000);
+    }
+  } catch (err) {
+    console.error(err);
+    showToast(toast, getPasswordErrorMessage(err), "error");
+  } finally {
+    btn.disabled = false;
   }
 }
 
@@ -990,6 +1045,9 @@ async function loadVolunteersTable() {
               <td><span class="badge badge--role">${escapeHtml(teamLabel(teams, u.team))}</span></td>
               <td><span class="badge ${u.active !== false ? "badge--published" : "badge--inactive"}">${u.active !== false ? "Active" : "Inactive"}</span></td>
               <td class="table-actions">
+                <button class="btn btn--ghost btn--sm" data-reset-pw="${escapeHtml(u.userId)}" data-label="${escapeHtml(u.displayName || u.username)}" data-suggest="${escapeHtml(u.mobile || u.username || "")}">
+                  Reset password
+                </button>
                 <button class="btn btn--ghost btn--sm" data-toggle-vol="${u.userId}" data-active="${u.active !== false}">
                   ${u.active !== false ? "Deactivate" : "Activate"}
                 </button>
@@ -999,6 +1057,13 @@ async function loadVolunteersTable() {
             .join("")}
         </tbody>
       </table>`;
+
+    wrap.querySelectorAll("[data-reset-pw]").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        if (!(await ensureAdminSession())) return;
+        await handleAdminPasswordReset(btn);
+      });
+    });
 
     wrap.querySelectorAll("[data-toggle-vol]").forEach((btn) => {
       btn.addEventListener("click", async () => {

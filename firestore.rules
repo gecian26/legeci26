@@ -150,6 +150,19 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    match /volunteer_certificate_batches/{batchId} {
+      allow read: if true;
+      allow create: if isAdminSession(request.resource.data._sessionId)
+                    || (isFacultySession(request.resource.data._sessionId)
+                        && request.resource.data.department == facultyDepartment(request.resource.data._sessionId)
+                        && request.resource.data.keys().hasAll(['department', 'volunteers', 'templateId']));
+      allow update: if isAdminSession(request.resource.data._sessionId)
+                    || (isFacultySession(request.resource.data._sessionId)
+                        && resource.data.department == facultyDepartment(request.resource.data._sessionId)
+                        && request.resource.data.department == resource.data.department);
+      allow delete: if false;
+    }
+
     match /legeci_expenses/{expenseId} {
       allow read: if true;
       allow create: if isAccountsWriter(request.resource.data._sessionId)

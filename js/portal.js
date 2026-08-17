@@ -75,6 +75,7 @@ import {
 } from "../js/alumni-connect.js";
 import { downloadAlumniContactsPdf } from "../js/alumni-contacts-pdf.js";
 import { loadLeaderboardPanel } from "../js/leaderboard.js";
+import { mountVolunteerCertificates, isCertificateBatchRecord } from "../js/volunteer-certificates.js";
 import {
   mountTreasurerAccounts,
   loadExpenses,
@@ -136,6 +137,7 @@ function initPortal(session) {
   if (session.role === ROLES.FACULTY && session.department) {
     document.getElementById("navDept").hidden = false;
     document.getElementById("navAlumni").hidden = false;
+    document.getElementById("navCertificates").hidden = false;
     document.getElementById("execAlumniOverviewCard").hidden = true;
     document.getElementById("deptNameLabel").textContent = session.department;
     document.getElementById("alumniPanelTitle").textContent = "Alumni Connect — Department Dashboard";
@@ -220,6 +222,7 @@ function setupNavigation() {
     dashboard: "Dashboard",
     dept: "Department Work",
     alumni: "Alumni Connect",
+    certificates: "Certificates",
     leaderboard: "Leaderboard",
     mytasks: "My Tasks",
     accounts: "Finance",
@@ -242,6 +245,9 @@ function setupNavigation() {
         } else if (currentSession?.department) {
           loadDeptAlumniContacts(currentSession.department);
         }
+      }
+      if (panel === "certificates" && currentSession?.role === ROLES.FACULTY) {
+        loadFacultyCertificates();
       }
       if (panel === "leaderboard") {
         if (
@@ -669,6 +675,15 @@ async function setupDepartmentPanel(session) {
   await refreshDepartmentData(session);
 }
 
+async function loadFacultyCertificates() {
+  const wrap = document.getElementById("facultyCertificatesWrap");
+  if (!wrap || !currentSession) return;
+  await mountVolunteerCertificates(wrap, {
+    session: currentSession,
+    notify: (message, type) => showToast(toast, message, type),
+  });
+}
+
 async function refreshDepartmentData(session) {
   await loadDeptVolunteers(session.department);
   await loadDeptMainTasks(session);
@@ -911,17 +926,19 @@ async function loadDeptMainTasks(session) {
 
     wrap.innerHTML = `
       <table class="data-table">
-        <thead><tr><th>Task</th><th>Teams</th><th>Due</th><th>Assign to team</th><th></th></tr></thead>
+        <thead><tr><th>Task</th><th>Type</th><th>Teams</th><th>Due</th><th>Assign to team</th><th></th></tr></thead>
         <tbody>
           ${tasks
             .map((t) => {
               const options = teamOptionsForTask(t);
+              const type = inferTaskType(t);
               return `
             <tr>
               <td>
                 <strong>${escapeHtml(t.title)}</strong>
                 ${t.description ? `<br><small style="color:var(--slate-500)">${escapeHtml(t.description)}</small>` : ""}
               </td>
+              <td><span class="badge badge--role">${escapeHtml(TASK_TYPE_LABELS[type] || TASK_TYPE_LABELS[TASK_TYPES.GENERAL])}</span></td>
               <td>${escapeHtml(
                 t.teams?.length
                   ? t.teams.map((id) => teamLabel(cachedTeams, id)).join(", ")
@@ -971,7 +988,9 @@ async function loadDeptMainTasks(session) {
             task.taskType ||
             (/alumni\s*connect/i.test(task.title || "")
               ? TASK_TYPES.ALUMNI_CONNECT
-              : TASK_TYPES.GENERAL);
+              : /volunteer\s*cert/i.test(task.title || "")
+                ? TASK_TYPES.VOLUNTEER_CERTIFICATE
+                : TASK_TYPES.GENERAL);
 
           await addDoc(collection(db, DEPT_TASKS_COLLECTION), withSession({
             parentTaskId: taskId,
@@ -987,7 +1006,13 @@ async function loadDeptMainTasks(session) {
             createdAt: serverTimestamp(),
             updatedAt: serverTimestamp(),
           }));
-          showToast(toast, "Task replicated for your department.", "success");
+          showToast(
+            toast,
+            taskType === TASK_TYPES.VOLUNTEER_CERTIFICATE
+              ? "Volunteer Certificate assigned. Open Certificates in the sidebar to generate PDFs."
+              : "Task replicated for your department.",
+            "success"
+          );
           await loadDeptTasks(session);
           await loadDeptAlumniContacts(session.department);
         } catch (err) {
@@ -1029,7 +1054,7 @@ async function loadDeptTasks(session) {
     const snap = await getDocs(collection(db, DEPT_TASKS_COLLECTION));
     const tasks = snap.docs
       .map((d) => ({ id: d.id, ...d.data() }))
-      .filter((t) => !t._deleted && t.department === department)
+      .filter((t) => !t._deleted && t.department === department && !isCertificateBatchRecord(t))
       .sort((a, b) => (a.title || "").localeCompare(b.title || ""));
 
     if (!tasks.length) {
@@ -1055,6 +1080,11 @@ async function loadDeptTasks(session) {
               </p>
               ${t.description ? `<p class="form-hint">${escapeHtml(t.description)}</p>` : ""}
               <p class="form-hint">Assigned: ${escapeHtml(assigneeNames || "None yet")}</p>
+              ${
+                inferTaskType(t) === TASK_TYPES.VOLUNTEER_CERTIFICATE
+                  ? `<p class="form-hint">Generate PDFs from the <strong>Certificates</strong> sidebar after this task is assigned.</p>`
+                  : ""
+              }
             </div>
           </div>
           <div class="form-row" style="margin-top:0.75rem;">
@@ -1106,7 +1136,9 @@ async function loadDeptTasks(session) {
               task.taskType ||
               (/alumni\s*connect/i.test(task.title || "")
                 ? TASK_TYPES.ALUMNI_CONNECT
-                : TASK_TYPES.GENERAL),
+                : /volunteer\s*cert/i.test(task.title || "")
+                  ? TASK_TYPES.VOLUNTEER_CERTIFICATE
+                  : TASK_TYPES.GENERAL),
             status,
             progress,
             assigneeUserIds,
@@ -1480,6 +1512,7 @@ function resolveUserId(session) {
 function inferTaskType(task) {
   if (task?.taskType) return task.taskType;
   if (/alumni\s*connect/i.test(task?.title || "")) return TASK_TYPES.ALUMNI_CONNECT;
+  if (/volunteer\s*cert/i.test(task?.title || "")) return TASK_TYPES.VOLUNTEER_CERTIFICATE;
   return TASK_TYPES.GENERAL;
 }
 
@@ -1502,6 +1535,7 @@ async function loadMyTasks(session) {
       .filter(
         (t) =>
           !t._deleted &&
+          !isCertificateBatchRecord(t) &&
           Array.isArray(t.assigneeUserIds) &&
           t.assigneeUserIds.includes(userId)
       )
@@ -1536,7 +1570,9 @@ async function loadMyTasks(session) {
                 ${
                   type === TASK_TYPES.ALUMNI_CONNECT
                     ? `<button class="btn btn--primary btn--sm" data-open-connect="${t.id}">Add Contact</button>`
-                    : `<span class="form-hint">General task</span>`
+                    : type === TASK_TYPES.VOLUNTEER_CERTIFICATE
+                      ? `<span class="form-hint">Faculty generates certificates</span>`
+                      : `<span class="form-hint">General task</span>`
                 }
               </td>
             </tr>`;

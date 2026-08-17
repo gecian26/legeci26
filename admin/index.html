@@ -4,6 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Admin Portal — GECIAN Alumni Network</title>
+  <link rel="icon" href="../assets/legeci-logo.png" type="image/png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -78,9 +79,9 @@
             </div>
             <div class="form-row">
               <div class="form-group">
-                <label for="registrationFee">Registration Fee (₹)</label>
+                <label for="registrationFee">Registration Fee per person (₹)</label>
                 <input type="number" id="registrationFee" min="0" step="1" placeholder="e.g. 500">
-                <p class="form-hint">Used in Alumni Connect registration status tracking.</p>
+                <p class="form-hint">Per-person rate. Volunteers set how many members attend; total = members × this fee.</p>
               </div>
               <div class="form-group">
                 <label for="registrationFeeNote">Fee Note</label>
@@ -226,6 +227,9 @@
 
         <div class="portal-card">
           <h2 class="portal-card__title">Institutional Users</h2>
+          <p class="form-hint" style="margin-bottom:1rem;">
+            Activate or deactivate accounts, or reset a temporary password. After a reset, the user must change the password on next login.
+          </p>
           <div id="usersTableWrap">
             <p class="empty-state">Loading users...</p>
           </div>
@@ -257,6 +261,9 @@
 
         <div class="portal-card">
           <h2 class="portal-card__title">Student Volunteers</h2>
+          <p class="form-hint" style="margin-bottom:1rem;">
+            Reset password sets a temporary password (often the mobile number). The volunteer must change it after login.
+          </p>
           <div id="volunteersTableWrap">
             <p class="empty-state">Loading volunteers...</p>
           </div>
@@ -296,8 +303,8 @@
         <div class="portal-card">
           <h2 class="portal-card__title">Create Main Task</h2>
           <p class="form-hint" style="margin-bottom:1.25rem;">
-            Main tasks are created here. Department faculty coordinators can later replicate them for their department and assign to student teams.
-            Detailed task workflow will be expanded next.
+            Main tasks are created here. Faculty coordinators replicate them for their department.
+            Use <strong>Alumni Connect</strong> for outreach, or <strong>Volunteer Certificate</strong> to assign internship certificate generation.
           </p>
           <form id="mainTaskForm">
             <div class="form-group">
@@ -309,9 +316,11 @@
               <select id="taskType">
                 <option value="general">General</option>
                 <option value="alumni_connect">Alumni Connect</option>
+                <option value="volunteer_certificate">Volunteer Certificate</option>
               </select>
               <p class="form-hint">
                 <strong>Alumni Connect</strong> lets student volunteers record alumni contacted (willingness + registration/payment status).
+                <strong>Volunteer Certificate</strong> is assigned to faculty coordinators so they can upload intern lists and generate internship certificates.
               </p>
             </div>
             <div class="form-group">
@@ -376,6 +385,6 @@
   </div>
 
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
-  <script type="module" src="../js/admin.js"></script>
+  <script type="module" src="../js/admin.js?v=reset1"></script>
 </body>
 </html>

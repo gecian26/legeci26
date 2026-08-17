@@ -63,6 +63,8 @@ export const MAIN_TASKS_COLLECTION = "main_tasks";
 export const DEPT_TASKS_COLLECTION = "dept_tasks";
 /** Firestore collection for Alumni Connect contact records */
 export const ALUMNI_CONTACTS_COLLECTION = "alumni_contacts";
+/** Firestore collection for volunteer internship certificate batches */
+export const VOLUNTEER_CERTIFICATE_BATCHES = "volunteer_certificate_batches";
 /** settings/{REGISTRATION_SETTINGS_DOC} — LEGECI registration fee */
 export const REGISTRATION_SETTINGS_DOC = "registration";
 /** LEGECI treasurer accounting */
@@ -98,12 +100,49 @@ export const EXPENSE_STATUS = {
 export const TASK_TYPES = {
   GENERAL: "general",
   ALUMNI_CONNECT: "alumni_connect",
+  VOLUNTEER_CERTIFICATE: "volunteer_certificate",
 };
 
 export const TASK_TYPE_LABELS = {
   [TASK_TYPES.GENERAL]: "General",
   [TASK_TYPES.ALUMNI_CONNECT]: "Alumni Connect",
+  [TASK_TYPES.VOLUNTEER_CERTIFICATE]: "Volunteer Certificate",
 };
+
+export const CERTIFICATE_SIGNATORIES = [
+  { name: "Dr. Baiju Sasidharan", title: "Principal" },
+  { name: "Dr. Manju Manuel", title: "Dean, Alumni & International Affairs" },
+  { name: "Prof. Rejin R", title: "Alumni Association Secretary" },
+];
+
+export const CERTIFICATE_PERIOD = "1st July to 31st July 2026";
+export const CERTIFICATE_EVENT = "LEGECI 2026 (Mega Alumni Meetup)";
+export const CERTIFICATE_INSTITUTION = "Government Engineering College Idukki";
+export const CERTIFICATE_ISSUER = "Alumni Association";
+export const CERTIFICATE_PROGRAMME = "B.Tech";
+
+export const CERTIFICATE_TEMPLATES = [
+  {
+    id: "classic",
+    name: "Classic Formal",
+    description: "Navy and gold academic frame — traditional internship certificate.",
+  },
+  {
+    id: "heritage",
+    name: "Heritage Scroll",
+    description: "Parchment and gold ornaments — commemorative LEGECI style.",
+  },
+  {
+    id: "modern",
+    name: "Modern Minimal",
+    description: "Clean teal accent with contemporary layout.",
+  },
+  {
+    id: "jubilee",
+    name: "Jubilee",
+    description: "Purple and gold — GECI Silver Jubilee branding.",
+  },
+];
 
 export const WILLINGNESS_OPTIONS = [
   { value: "willing", label: "Willing to attend" },
