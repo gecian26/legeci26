@@ -452,25 +452,13 @@ function drawBody(doc, volunteer, colors, pageW, startY, maxW, maxY) {
     doc,
     [
       {
-        text: "has successfully completed the internship towards various initiatives of ",
+        text: "has successfully completed the internship towards ",
         family: "Jakarta",
         style: "normal",
         color: colors.ink,
       },
       {
-        text: CERTIFICATE_ISSUER,
-        family: "Jakarta",
-        style: "bold",
-        color: colors.ink,
-      },
-      {
-        text: " ",
-        family: "Jakarta",
-        style: "normal",
-        color: colors.ink,
-      },
-      {
-        text: CERTIFICATE_INSTITUTION,
+        text: "various initiatives",
         family: "Jakarta",
         style: "bold",
         color: colors.ink,
