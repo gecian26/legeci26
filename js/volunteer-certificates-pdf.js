@@ -271,6 +271,44 @@ function drawGoldDivider(doc, cx, y, colors, width = 46) {
   doc.circle(cx, y, 2.3, "S");
 }
 
+function drawCenteredMixed(doc, segments, cx, startY, maxW, fontSize, lineH, fallbackFamily, fallbackStyle) {
+  const measured = segments.map((s) => {
+    setFace(doc, s.family, s.style, fallbackFamily, fallbackStyle);
+    doc.setFontSize(fontSize);
+    return { ...s, width: doc.getTextWidth(s.text) };
+  });
+
+  const lines = [];
+  let current = [];
+  let currentW = 0;
+  measured.forEach((seg) => {
+    if (current.length && currentW + seg.width > maxW) {
+      lines.push(current);
+      current = [seg];
+      currentW = seg.width;
+    } else {
+      current.push(seg);
+      currentW += seg.width;
+    }
+  });
+  if (current.length) lines.push(current);
+
+  let y = startY;
+  lines.forEach((line) => {
+    const total = line.reduce((sum, s) => sum + s.width, 0);
+    let x = cx - total / 2;
+    line.forEach((s) => {
+      setFace(doc, s.family, s.style, fallbackFamily, fallbackStyle);
+      doc.setFontSize(fontSize);
+      doc.setTextColor(...s.color);
+      doc.text(s.text, x, y);
+      x += s.width;
+    });
+    y += lineH;
+  });
+  return y;
+}
+
 function wrapCenter(doc, text, maxW, fontSize) {
   doc.setFontSize(fontSize);
   return doc.splitTextToSize(text, maxW);
@@ -328,7 +366,7 @@ function drawBody(doc, volunteer, colors, pageW, startY, maxW, maxY) {
   doc.text("This is to certify that", cx, y, { align: "center" });
   y += 11;
 
-  setFace(doc, "PlayfairDisplay", "italic", "times", "italic");
+  setFace(doc, "PlayfairDisplay", "bold", "times", "bold");
   const nameSize = name.length > 28 ? 20 : 24;
   doc.setFontSize(nameSize);
   doc.setTextColor(...colors.ink);
@@ -369,20 +407,56 @@ function drawBody(doc, volunteer, colors, pageW, startY, maxW, maxY) {
   }
 
   setFace(doc, "Jakarta", "normal", "helvetica", "normal");
-  doc.setFontSize(12);
-  doc.setTextColor(...colors.ink);
-  const body =
-    `has successfully completed the internship towards the initiatives of ${CERTIFICATE_EVENT} at ${CERTIFICATE_INSTITUTION} during ${CERTIFICATE_PERIOD}.`;
-  let bodySize = 12;
-  let bodyLineH = 6.2;
-  let bodyLines = wrapCenter(doc, body, maxW, bodySize);
-  if (maxY && y + bodyLines.length * bodyLineH > maxY) {
-    bodySize = 11;
-    bodyLineH = 5.4;
-    bodyLines = wrapCenter(doc, body, maxW, bodySize);
-  }
-  doc.setFontSize(bodySize);
-  y = drawWrappedCenter(doc, bodyLines, cx, y, bodyLineH);
+  const bodySize = maxY && y + 18 > maxY ? 11 : 12;
+  const bodyLineH = bodySize === 11 ? 5.6 : 6.4;
+  y = drawCenteredMixed(
+    doc,
+    [
+      {
+        text: "has successfully completed the internship towards the initiatives of ",
+        family: "Jakarta",
+        style: "normal",
+        color: colors.ink,
+      },
+      {
+        text: CERTIFICATE_EVENT,
+        family: "Jakarta",
+        style: "bold",
+        color: colors.ink,
+      },
+      {
+        text: " at ",
+        family: "Jakarta",
+        style: "normal",
+        color: colors.ink,
+      },
+      {
+        text: CERTIFICATE_INSTITUTION,
+        family: "Jakarta",
+        style: "bold",
+        color: colors.ink,
+      },
+      {
+        text: " during ",
+        family: "Jakarta",
+        style: "normal",
+        color: colors.ink,
+      },
+      {
+        text: `${CERTIFICATE_PERIOD}.`,
+        family: "Jakarta",
+        style: "bold",
+        color: colors.ink,
+      },
+    ],
+    cx,
+    y,
+    maxW,
+    bodySize,
+    bodyLineH,
+    "helvetica",
+    "normal"
+  );
   return y;
 }
 
@@ -440,12 +514,12 @@ function drawJubileeChrome(doc, pageW, pageH, colors) {
 function drawHeading(doc, templateId, colors, pageW, y, logo) {
   const cx = pageW / 2;
   setFace(doc, "Jakarta", "bold", "helvetica", "bold");
-  doc.setFontSize(9);
-  doc.setTextColor(...colors.muted);
+  doc.setFontSize(12);
+  doc.setTextColor(...colors.ink);
   doc.text(CERTIFICATE_INSTITUTION.toUpperCase(), cx, y, {
     align: "center",
   });
-  y += 5.5;
+  y += 6;
 
   setFace(doc, "Cinzel", "bold", "times", "bold");
   doc.setFontSize(11);
@@ -455,23 +529,21 @@ function drawHeading(doc, templateId, colors, pageW, y, logo) {
 
   y = drawLogo(doc, logo, cx, y, 108, 28) + 5;
 
+  setFace(doc, "PlayfairDisplay", "italic", "times", "italic");
+  doc.setFontSize(13);
+  doc.setTextColor(...colors.muted);
+  const tagline =
+    templateId === "jubilee" ? `${MEETUP_TAGLINE}  ·  Silver Jubilee` : MEETUP_TAGLINE;
+  doc.text(tagline, cx, y, { align: "center" });
+  y += 9;
+
   setFace(doc, "Cinzel", "bold", "times", "bold");
   doc.setFontSize(20);
   doc.setTextColor(...colors.accent);
   doc.text("CERTIFICATE OF INTERNSHIP", cx, y, { align: "center" });
   y += 5.5;
   drawGoldDivider(doc, cx, y, colors, 52);
-  y += 7;
-
-  setFace(doc, "PlayfairDisplay", "italic", "times", "italic");
-  doc.setFontSize(12);
-  doc.setTextColor(...colors.muted);
-  const kicker =
-    templateId === "jubilee"
-      ? `${MEETUP_NAME}  ·  ${MEETUP_TAGLINE}  ·  Silver Jubilee`
-      : `${MEETUP_NAME}  ·  ${MEETUP_TAGLINE}`;
-  doc.text(kicker, cx, y, { align: "center" });
-  return y + 12;
+  return y + 10;
 }
 
 function renderCertificatePage(doc, volunteer, templateId, logo) {
@@ -488,9 +560,8 @@ function renderCertificatePage(doc, volunteer, templateId, logo) {
 
   drawWatermark(doc, pageW, pageH, colors);
 
-  let y = templateId === "modern" ? 12 : 11;
+  let y = templateId === "modern" ? 20 : 19;
   y = drawHeading(doc, templateId, colors, pageW, y, logo);
-  drawBody(doc, volunteer, colors, pageW, y, maxW, signatureY - 8);
   drawBody(doc, volunteer, colors, pageW, y, maxW, signatureY - 8);
   drawSignatures(doc, pageW, signatureY, colors);
 }
