@@ -116,7 +116,7 @@ export const CERTIFICATE_SIGNATORIES = [
 ];
 
 export const CERTIFICATE_PERIOD = "1st July to 31st July 2026";
-export const CERTIFICATE_EVENT = "LEGECI 2026 (Mega Alumni Meetup)";
+export const CERTIFICATE_EVENT = "LEGECI 2026";
 export const CERTIFICATE_INSTITUTION = "Government Engineering College Idukki";
 export const CERTIFICATE_ISSUER = "Alumni Association";
 export const CERTIFICATE_PROGRAMME = "B.Tech";

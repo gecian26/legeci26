@@ -48,7 +48,7 @@ export async function downloadCertificateVolunteerTemplate() {
     "Certificate wording",
     "  This is to certify that [fullName] of [affiliation]",
     "  [Semester n] has successfully completed the internship towards the",
-    "  initiatives of LEGECI 2026 (Mega Alumni Meetup) at GECI",
+    "  initiatives of LEGECI 2026 at Government Engineering College Idukki",
     "  during 1st July to 31st July 2026.",
     "",
     `Departments: ${DEPARTMENT_CODES.join(", ")}`,

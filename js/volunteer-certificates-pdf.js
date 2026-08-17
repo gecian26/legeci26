@@ -83,7 +83,7 @@ const FONT_SPECS = [
   },
 ];
 
-let cachedLogo = null;
+let cachedImages = new Map();
 let cachedFonts = null;
 
 function arrayBufferToBase64(buffer) {
@@ -147,26 +147,36 @@ function loadImg(src) {
   });
 }
 
-async function getLogo() {
-  if (cachedLogo !== null) return cachedLogo;
-  const candidates = [
-    new URL("../assets/legeci-cert-logo.png", import.meta.url).href,
-    new URL("../assets/legeci-logo.png", import.meta.url).href,
-  ];
-  for (const url of candidates) {
-    try {
-      const res = await fetch(url);
-      if (!res.ok) continue;
-      const dataUrl = await blobToDataUrl(await res.blob());
-      const img = await loadImg(dataUrl);
-      cachedLogo = { dataUrl, width: img.width, height: img.height };
-      return cachedLogo;
-    } catch {
-      // try next
-    }
+async function loadPng(relativePath) {
+  if (cachedImages.has(relativePath)) return cachedImages.get(relativePath) || null;
+  try {
+    const url = new URL(relativePath, import.meta.url).href;
+    const res = await fetch(url);
+    if (!res.ok) throw new Error("image fetch failed");
+    const dataUrl = await blobToDataUrl(await res.blob());
+    const img = await loadImg(dataUrl);
+    const data = { dataUrl, width: img.width, height: img.height };
+    cachedImages.set(relativePath, data);
+    return data;
+  } catch {
+    cachedImages.set(relativePath, false);
+    return null;
   }
-  cachedLogo = false;
-  return null;
+}
+
+async function getLogo() {
+  return (
+    (await loadPng("../assets/legeci-cert-logo.png")) ||
+    (await loadPng("../assets/legeci-logo.png"))
+  );
+}
+
+async function getSideLogos() {
+  const [geci, silver] = await Promise.all([
+    loadPng("../assets/geci-logo.png"),
+    loadPng("../assets/geci-silver.png"),
+  ]);
+  return { geci, silver };
 }
 
 function formatDateStamp(d = new Date()) {
@@ -206,17 +216,47 @@ export function formatSemesterLabel(value) {
   return compact;
 }
 
-function drawLogo(doc, logo, cx, y, maxW, maxH) {
-  if (!logo) return y + 2;
-  const ratio = logo.width / Math.max(logo.height, 1);
+function fitImageSize(image, maxW, maxH) {
+  if (!image) return { w: 0, h: 0 };
+  const ratio = image.width / Math.max(image.height, 1);
   let w = maxW;
   let h = w / ratio;
   if (h > maxH) {
     h = maxH;
     w = h * ratio;
   }
+  return { w, h };
+}
+
+function drawLogo(doc, logo, cx, y, maxW, maxH) {
+  if (!logo) return y + 2;
+  const { w, h } = fitImageSize(logo, maxW, maxH);
   doc.addImage(logo.dataUrl, "PNG", cx - w / 2, y, w, h, undefined, "FAST");
   return y + h;
+}
+
+function drawSideLogos(doc, pageW, y, sideLogos, templateId) {
+  const geciMax = 34;
+  const silverMax = 46;
+  const leftPad = templateId === "modern" ? 18 : 16;
+  const rightPad = 14;
+  if (sideLogos?.geci) {
+    const { w, h } = fitImageSize(sideLogos.geci, geciMax, geciMax);
+    doc.addImage(sideLogos.geci.dataUrl, "PNG", leftPad, y, w, h, undefined, "FAST");
+  }
+  if (sideLogos?.silver) {
+    const { w, h } = fitImageSize(sideLogos.silver, silverMax, silverMax);
+    doc.addImage(
+      sideLogos.silver.dataUrl,
+      "PNG",
+      pageW - rightPad - w,
+      y - 2,
+      w,
+      h,
+      undefined,
+      "FAST"
+    );
+  }
 }
 
 function drawCornerOrnament(doc, x, y, dirX, dirY, color) {
@@ -546,7 +586,7 @@ function drawHeading(doc, templateId, colors, pageW, y, logo) {
   return y + 10;
 }
 
-function renderCertificatePage(doc, volunteer, templateId, logo) {
+function renderCertificatePage(doc, volunteer, templateId, logo, sideLogos) {
   const pageW = doc.internal.pageSize.getWidth();
   const pageH = doc.internal.pageSize.getHeight();
   const colors = TEMPLATES[templateId] || TEMPLATES.classic;
@@ -559,6 +599,9 @@ function renderCertificatePage(doc, volunteer, templateId, logo) {
   else drawClassicChrome(doc, pageW, pageH, colors);
 
   drawWatermark(doc, pageW, pageH, colors);
+
+  const sideY = templateId === "modern" ? 14 : 16;
+  drawSideLogos(doc, pageW, sideY, sideLogos, templateId);
 
   let y = templateId === "modern" ? 30 : 29;
   y = drawHeading(doc, templateId, colors, pageW, y, logo);
@@ -584,13 +627,17 @@ export async function downloadVolunteerCertificatesPdf(opts = {}) {
     throw new Error("No volunteers to generate certificates for.");
   }
   const templateId = normalizeCertificateTemplate(opts.templateId);
-  const [logo, fonts] = await Promise.all([getLogo(), loadFontPack()]);
+  const [logo, sideLogos, fonts] = await Promise.all([
+    getLogo(),
+    getSideLogos(),
+    loadFontPack(),
+  ]);
   const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
   applyFonts(doc, fonts);
 
   volunteers.forEach((volunteer, index) => {
     if (index > 0) doc.addPage();
-    renderCertificatePage(doc, volunteer, templateId, logo);
+    renderCertificatePage(doc, volunteer, templateId, logo, sideLogos);
   });
 
   const stamp = formatDateStamp();
