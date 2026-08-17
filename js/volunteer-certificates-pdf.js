@@ -527,7 +527,7 @@ function drawHeading(doc, templateId, colors, pageW, y, logo) {
   doc.text(CERTIFICATE_ISSUER.toUpperCase(), cx, y, { align: "center" });
   y += 5;
 
-  y = drawLogo(doc, logo, cx, y, 108, 28) + 5;
+  y = drawLogo(doc, logo, cx, y, 108, 28) + 1.5;
 
   setFace(doc, "PlayfairDisplay", "italic", "times", "italic");
   doc.setFontSize(13);
@@ -560,7 +560,7 @@ function renderCertificatePage(doc, volunteer, templateId, logo) {
 
   drawWatermark(doc, pageW, pageH, colors);
 
-  let y = templateId === "modern" ? 20 : 19;
+  let y = templateId === "modern" ? 30 : 29;
   y = drawHeading(doc, templateId, colors, pageW, y, logo);
   drawBody(doc, volunteer, colors, pageW, y, maxW, signatureY - 8);
   drawSignatures(doc, pageW, signatureY, colors);
