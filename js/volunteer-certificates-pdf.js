@@ -2,7 +2,6 @@ import { jsPDF } from "https://cdn.jsdelivr.net/npm/jspdf@2.5.2/+esm";
 import {
   CERTIFICATE_SIGNATORIES,
   CERTIFICATE_PERIOD,
-  CERTIFICATE_EVENT,
   CERTIFICATE_INSTITUTION,
   CERTIFICATE_ISSUER,
   CERTIFICATE_PROGRAMME,
@@ -453,19 +452,19 @@ function drawBody(doc, volunteer, colors, pageW, startY, maxW, maxY) {
     doc,
     [
       {
-        text: "has successfully completed the internship towards the initiatives of ",
+        text: "has successfully completed the internship towards various initiatives of ",
         family: "Jakarta",
         style: "normal",
         color: colors.ink,
       },
       {
-        text: CERTIFICATE_EVENT,
+        text: CERTIFICATE_ISSUER,
         family: "Jakarta",
         style: "bold",
         color: colors.ink,
       },
       {
-        text: " at ",
+        text: " ",
         family: "Jakarta",
         style: "normal",
         color: colors.ink,

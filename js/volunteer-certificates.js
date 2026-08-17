@@ -11,7 +11,8 @@ import {
   DEPT_TASKS_COLLECTION,
   CERTIFICATE_TEMPLATES,
   CERTIFICATE_PERIOD,
-  CERTIFICATE_EVENT,
+  CERTIFICATE_ISSUER,
+  CERTIFICATE_INSTITUTION,
   CERTIFICATE_SIGNATORIES,
   DEPARTMENTS,
   escapeHtml,
@@ -218,8 +219,10 @@ export async function mountVolunteerCertificates(wrap, { session, notify } = {})
         <p>
           This is to certify that <em>…………………………..</em> of <em>……………………</em>
           (<em>Semester</em>) has successfully
-          completed the internship towards the initiatives of <strong>${escapeHtml(CERTIFICATE_EVENT)}</strong>
-          at GECI during <strong>${escapeHtml(CERTIFICATE_PERIOD)}</strong>.
+          completed the internship towards various initiatives of
+          <strong>${escapeHtml(CERTIFICATE_ISSUER)}</strong>
+          <strong>${escapeHtml(CERTIFICATE_INSTITUTION)}</strong>
+          during <strong>${escapeHtml(CERTIFICATE_PERIOD)}</strong>.
         </p>
         <p class="form-hint" style="margin:0.5rem 0 0;">
           Signatories: ${escapeHtml(signatoryLine)}. Each PDF page includes the LEGECI logo.
