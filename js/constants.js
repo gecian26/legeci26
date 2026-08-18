@@ -115,7 +115,7 @@ export const CERTIFICATE_SIGNATORIES = [
   { name: "Prof. Rejin R", title: "Alumni Association Secretary" },
 ];
 
-export const CERTIFICATE_PERIOD = "1st July to 31st July 2026";
+export const CERTIFICATE_PERIOD = "15 June 2026 to 30 June 2026";
 export const CERTIFICATE_EVENT = "LEGECI 2026";
 export const CERTIFICATE_INSTITUTION = "Government Engineering College Idukki";
 export const CERTIFICATE_ISSUER = "Alumni Association";

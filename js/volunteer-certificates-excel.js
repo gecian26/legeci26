@@ -48,7 +48,7 @@ export async function downloadCertificateVolunteerTemplate() {
     "Certificate wording",
     "  This is to certify that [fullName] of [affiliation]",
     "  [Semester n] has successfully completed the internship towards",
-    "  various initiatives during 1st July to 31st July 2026.",
+    "  various initiatives during 15 June 2026 to 30 June 2026.",
     "",
     `Departments: ${DEPARTMENT_CODES.join(", ")}`,
     `Semesters: ${SEMESTER_VALUES.join(", ")}`,
