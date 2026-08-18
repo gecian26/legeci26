@@ -11,6 +11,8 @@ import {
   DEPT_TASKS_COLLECTION,
   CERTIFICATE_TEMPLATES,
   CERTIFICATE_PERIOD,
+  CERTIFICATE_ISSUER,
+  CERTIFICATE_INSTITUTION,
   CERTIFICATE_SIGNATORIES,
   DEPARTMENTS,
   escapeHtml,
@@ -218,6 +220,8 @@ export async function mountVolunteerCertificates(wrap, { session, notify } = {})
           This is to certify that <em>…………………………..</em> of <em>……………………</em>
           (<em>Semester</em>) has successfully
           completed the internship towards <strong>various initiatives</strong>
+          of <strong>${escapeHtml(CERTIFICATE_ISSUER)}</strong>,
+          <strong>${escapeHtml(CERTIFICATE_INSTITUTION)}</strong>
           during <strong>${escapeHtml(CERTIFICATE_PERIOD)}</strong>.
         </p>
         <p class="form-hint" style="margin:0.5rem 0 0;">

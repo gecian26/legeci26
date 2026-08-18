@@ -464,6 +464,30 @@ function drawBody(doc, volunteer, colors, pageW, startY, maxW, maxY) {
         color: colors.ink,
       },
       {
+        text: " of ",
+        family: "Jakarta",
+        style: "normal",
+        color: colors.ink,
+      },
+      {
+        text: CERTIFICATE_ISSUER,
+        family: "Jakarta",
+        style: "bold",
+        color: colors.ink,
+      },
+      {
+        text: ", ",
+        family: "Jakarta",
+        style: "normal",
+        color: colors.ink,
+      },
+      {
+        text: CERTIFICATE_INSTITUTION,
+        family: "Jakarta",
+        style: "bold",
+        color: colors.ink,
+      },
+      {
         text: " during ",
         family: "Jakarta",
         style: "normal",
