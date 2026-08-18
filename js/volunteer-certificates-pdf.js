@@ -236,7 +236,7 @@ function drawLogo(doc, logo, cx, y, maxW, maxH) {
 
 function drawSideLogos(doc, pageW, y, sideLogos, templateId) {
   const geciMax = 34;
-  const silverMax = 46;
+  const silverMax = 50;
   const leftPad = templateId === "modern" ? 18 : 16;
   const rightPad = 14;
   if (sideLogos?.geci) {
@@ -249,7 +249,7 @@ function drawSideLogos(doc, pageW, y, sideLogos, templateId) {
       sideLogos.silver.dataUrl,
       "PNG",
       pageW - rightPad - w,
-      y - 2,
+      y - 6,
       w,
       h,
       undefined,
@@ -565,18 +565,18 @@ function drawJubileeChrome(doc, pageW, pageH, colors) {
 function drawHeading(doc, templateId, colors, pageW, y, logo) {
   const cx = pageW / 2;
   setFace(doc, "Jakarta", "bold", "helvetica", "bold");
-  doc.setFontSize(12);
+  doc.setFontSize(16);
   doc.setTextColor(...colors.ink);
   doc.text(CERTIFICATE_INSTITUTION.toUpperCase(), cx, y, {
     align: "center",
   });
-  y += 6;
+  y += 8;
 
   setFace(doc, "Cinzel", "bold", "times", "bold");
-  doc.setFontSize(11);
+  doc.setFontSize(15);
   doc.setTextColor(...colors.accent);
   doc.text(CERTIFICATE_ISSUER.toUpperCase(), cx, y, { align: "center" });
-  y += 5;
+  y += 6.5;
 
   y = drawLogo(doc, logo, cx, y, 108, 28) + 1.5;
 
