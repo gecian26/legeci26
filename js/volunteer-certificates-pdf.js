@@ -310,10 +310,14 @@ function drawGoldDivider(doc, cx, y, colors, width = 46) {
   doc.circle(cx, y, 2.3, "S");
 }
 
+function segmentFontSize(segment, fontSize) {
+  return segment.sup ? fontSize * 0.58 : fontSize;
+}
+
 function drawCenteredMixed(doc, segments, cx, startY, maxW, fontSize, lineH, fallbackFamily, fallbackStyle) {
   const measured = segments.map((s) => {
     setFace(doc, s.family, s.style, fallbackFamily, fallbackStyle);
-    doc.setFontSize(fontSize);
+    doc.setFontSize(segmentFontSize(s, fontSize));
     return { ...s, width: doc.getTextWidth(s.text) };
   });
 
@@ -337,15 +341,58 @@ function drawCenteredMixed(doc, segments, cx, startY, maxW, fontSize, lineH, fal
     const total = line.reduce((sum, s) => sum + s.width, 0);
     let x = cx - total / 2;
     line.forEach((s) => {
+      const size = segmentFontSize(s, fontSize);
       setFace(doc, s.family, s.style, fallbackFamily, fallbackStyle);
-      doc.setFontSize(fontSize);
+      doc.setFontSize(size);
       doc.setTextColor(...s.color);
-      doc.text(s.text, x, y);
+      const baseline = s.sup ? y - fontSize * 0.145 : y;
+      doc.text(s.text, x, baseline);
       x += s.width;
     });
     y += lineH;
   });
   return y;
+}
+
+function periodWithSuperscript(period, colors) {
+  const parts = [];
+  const source = `${period}.`;
+  const re = /(\d+)(st|nd|rd|th)/gi;
+  let last = 0;
+  let match;
+  while ((match = re.exec(source))) {
+    if (match.index > last) {
+      parts.push({
+        text: source.slice(last, match.index),
+        family: "Jakarta",
+        style: "bold",
+        color: colors.ink,
+      });
+    }
+    parts.push({
+      text: match[1],
+      family: "Jakarta",
+      style: "bold",
+      color: colors.ink,
+    });
+    parts.push({
+      text: match[2],
+      family: "Jakarta",
+      style: "bold",
+      color: colors.ink,
+      sup: true,
+    });
+    last = match.index + match[0].length;
+  }
+  if (last < source.length) {
+    parts.push({
+      text: source.slice(last),
+      family: "Jakarta",
+      style: "bold",
+      color: colors.ink,
+    });
+  }
+  return parts;
 }
 
 function wrapCenter(doc, text, maxW, fontSize) {
@@ -493,12 +540,7 @@ function drawBody(doc, volunteer, colors, pageW, startY, maxW, maxY) {
         style: "normal",
         color: colors.ink,
       },
-      {
-        text: `${CERTIFICATE_PERIOD}.`,
-        family: "Jakarta",
-        style: "bold",
-        color: colors.ink,
-      },
+      ...periodWithSuperscript(CERTIFICATE_PERIOD, colors),
     ],
     cx,
     y,

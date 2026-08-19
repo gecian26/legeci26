@@ -16,6 +16,7 @@ import {
   CERTIFICATE_SIGNATORIES,
   DEPARTMENTS,
   escapeHtml,
+  escapeHtmlWithOrdinals,
   formatDateShort,
   normalizeUsername,
 } from "./constants.js";
@@ -222,7 +223,7 @@ export async function mountVolunteerCertificates(wrap, { session, notify } = {})
           completed the internship towards <strong>various initiatives</strong>
           of <strong>${escapeHtml(CERTIFICATE_ISSUER)}</strong>,
           <strong>${escapeHtml(CERTIFICATE_INSTITUTION)}</strong>
-          during <strong>${escapeHtml(CERTIFICATE_PERIOD)}</strong>.
+          during <strong>${escapeHtmlWithOrdinals(CERTIFICATE_PERIOD)}</strong>.
         </p>
         <p class="form-hint" style="margin:0.5rem 0 0;">
           Signatories: ${escapeHtml(signatoryLine)}. Each PDF page includes the LEGECI logo.

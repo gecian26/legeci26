@@ -115,7 +115,7 @@ export const CERTIFICATE_SIGNATORIES = [
   { name: "Prof. Rejin R", title: "Alumni Association Secretary" },
 ];
 
-export const CERTIFICATE_PERIOD = "15 June 2026 to 30 June 2026";
+export const CERTIFICATE_PERIOD = "16th June 2026 to 30th June 2026";
 export const CERTIFICATE_EVENT = "LEGECI 2026";
 export const CERTIFICATE_INSTITUTION = "Government Engineering College Idukki";
 export const CERTIFICATE_ISSUER = "Alumni Association";
@@ -225,6 +225,11 @@ export function escapeHtml(str) {
   const div = document.createElement("div");
   div.textContent = str ?? "";
   return div.innerHTML;
+}
+
+/** Render 16th / 30th with superscript ordinals for HTML previews. */
+export function escapeHtmlWithOrdinals(str) {
+  return escapeHtml(str).replace(/(\d+)(st|nd|rd|th)/gi, "$1<sup>$2</sup>");
 }
 
 export function showToast(el, message, type = "") {

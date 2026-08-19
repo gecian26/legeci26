@@ -49,7 +49,7 @@ export async function downloadCertificateVolunteerTemplate() {
     "  This is to certify that [fullName] of [affiliation]",
     "  [Semester n] has successfully completed the internship towards",
     "  various initiatives of Alumni Association, Government Engineering College Idukki",
-    "  during 15 June 2026 to 30 June 2026.",
+    "  during 16th June 2026 to 30th June 2026.",
     "",
     `Departments: ${DEPARTMENT_CODES.join(", ")}`,
     `Semesters: ${SEMESTER_VALUES.join(", ")}`,
