@@ -163,6 +163,28 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    match /pre_registrations/{docId} {
+      allow read: if true;
+      allow create, update: if isAdminSession(request.resource.data._sessionId)
+                            && request.resource.data.keys().hasAll(['alumniName']);
+      allow delete: if false;
+    }
+
+    match /event_registrations/{docId} {
+      allow read: if true;
+      allow create: if isAdminSession(request.resource.data._sessionId)
+                    || isFacultySession(request.resource.data._sessionId)
+                    || (isValidSession(request.resource.data._sessionId)
+                        && get(sessionPath(request.resource.data._sessionId)).data.role == 'student_volunteer'
+                        && request.resource.data.createdByUserId == get(sessionPath(request.resource.data._sessionId)).data.userId
+                        && request.resource.data.keys().hasAll(['alumniName', 'department', 'mobile', 'createdByUserId']));
+      allow update: if isAdminSession(request.resource.data._sessionId)
+                    || isFacultySession(request.resource.data._sessionId)
+                    || (isValidSession(request.resource.data._sessionId)
+                        && get(sessionPath(request.resource.data._sessionId)).data.role == 'student_volunteer');
+      allow delete: if false;
+    }
+
     match /legeci_expenses/{expenseId} {
       allow read: if true;
       allow create: if isAccountsWriter(request.resource.data._sessionId)

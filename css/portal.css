@@ -254,6 +254,21 @@
   color: var(--purple-700);
 }
 
+.badge--source-connect {
+  background: var(--purple-100);
+  color: var(--purple-700);
+}
+
+.badge--source-form {
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+
+.badge--source-spot {
+  background: #ffedd5;
+  color: #c2410c;
+}
+
 /* Alumni Connect status tones */
 .badge--status {
   border: 1px solid transparent;
@@ -2235,4 +2250,167 @@
 
 .vc-template-card__preview--jubilee .vc-template-card__line {
   background: #d4af37;
+}
+
+.er-desk {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.er-upload {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: 1rem 1.1rem;
+  border-radius: 14px;
+  background: var(--slate-50, #f8fafc);
+  border: 1px solid var(--slate-200);
+}
+
+.er-file-btn {
+  position: relative;
+  overflow: hidden;
+}
+
+.er-subtitle {
+  margin: 0 0 0.5rem;
+  font-size: 1.05rem;
+}
+
+.er-panel {
+  padding: 1rem 0 0;
+}
+
+.er-results {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  max-height: min(70vh, 42rem);
+  overflow: auto;
+  margin-bottom: 1rem;
+}
+
+.er-result {
+  text-align: left;
+  border: 1px solid var(--slate-200);
+  background: #fff;
+  border-radius: 12px;
+  padding: 0.65rem 0.9rem;
+  cursor: pointer;
+  font-family: var(--font-body);
+}
+
+.er-result:hover {
+  border-color: var(--purple-700, #6b2d7b);
+}
+
+.er-result--done {
+  background: #f0fdf4;
+}
+
+.er-result__top {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 0.65rem;
+  align-items: center;
+}
+
+.er-result-group {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  margin: 0.15rem 0;
+  padding: 0.4rem 0.15rem 0.3rem;
+  background: #fff;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--slate-500);
+}
+
+.er-result__meta {
+  margin: 0.3rem 0 0;
+  font-size: 0.82rem;
+  color: var(--slate-500);
+  line-height: 1.35;
+}
+
+.er-issue-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 1.25rem;
+  margin-top: 0.75rem;
+  padding: 0.85rem 1rem;
+  background: var(--slate-50, #f8fafc);
+  border-radius: 12px;
+  border: 1px solid var(--slate-200);
+}
+
+.er-issue-food {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem 1rem;
+}
+
+.er-food-count {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--slate-700);
+}
+
+.er-food-count input,
+.er-food-count-input {
+  width: 4.25rem;
+  padding: 0.35rem 0.5rem;
+  border: 1.5px solid var(--slate-200);
+  border-radius: 8px;
+  background: #fff;
+  font: inherit;
+}
+
+.er-food-count input:disabled,
+.er-food-count-input:disabled {
+  background: var(--slate-100);
+  color: var(--slate-400);
+}
+
+.er-food-total {
+  margin: 0;
+}
+
+.er-textarea {
+  width: 100%;
+  padding: 0.75rem 1rem;
+  font-family: var(--font-body);
+  font-size: 0.95rem;
+  border: 1.5px solid transparent;
+  border-radius: 10px;
+  background: var(--slate-100);
+  resize: vertical;
+}
+
+.er-today {
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--slate-200);
+}
+
+.er-admin {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.er-admin__split {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 1.25rem;
 }

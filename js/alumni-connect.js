@@ -12,6 +12,7 @@ import {
 import { withSession } from "./auth.js";
 import {
   ALUMNI_CONTACTS_COLLECTION,
+  isEventDeskRecord,
   REGISTRATION_SETTINGS_DOC,
   DEFAULT_REGISTRATION,
   WILLINGNESS_OPTIONS,
@@ -24,7 +25,7 @@ import {
   ALUMNI_BATCH_POOL_END_YEAR,
   MAX_MEMBERS_ATTENDING,
   escapeHtml,
-} from "./constants.js";
+} from "./constants.js?v=er2";
 
 export async function loadRegistrationSettings() {
   try {
@@ -439,6 +440,7 @@ export async function loadContactsByDepartment(
     .filter(
       (c) =>
         !c._deleted &&
+        !isEventDeskRecord(c) &&
         (!department || c.department === department) &&
         (includeInvalidated || !c.invalidated)
     )
@@ -454,6 +456,7 @@ export async function loadContactsByVolunteer(volunteerUserId, deptTaskId = null
       (c) =>
         !c._deleted &&
         !c.invalidated &&
+        !isEventDeskRecord(c) &&
         c.createdByUserId === volunteerUserId &&
         (!deptTaskId || c.deptTaskId === deptTaskId)
     )

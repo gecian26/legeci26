@@ -63,10 +63,23 @@ export const MAIN_TASKS_COLLECTION = "main_tasks";
 export const DEPT_TASKS_COLLECTION = "dept_tasks";
 /** Firestore collection for Alumni Connect contact records */
 export const ALUMNI_CONTACTS_COLLECTION = "alumni_contacts";
+/** Desk / spot check-ins — separate from Alumni Connect outreach */
+export const EVENT_REGISTRATIONS_COLLECTION = "event_registrations";
+/** Google Form pre-registrations uploaded by admin for desk search */
+export const PRE_REGISTRATIONS_COLLECTION = "pre_registrations";
 /** Firestore collection for volunteer internship certificate batches */
 export const VOLUNTEER_CERTIFICATE_BATCHES = "volunteer_certificate_batches";
 /** settings/{REGISTRATION_SETTINGS_DOC} — LEGECI registration fee */
 export const REGISTRATION_SETTINGS_DOC = "registration";
+/** settings/{EVENT_DESK_PREREG_DOC} — Google Form responses for Event Desk search */
+export const EVENT_DESK_PREREG_DOC = "event_desk_prereg";
+/** Discriminator so Event Desk check-ins are not mixed into Alumni Connect lists */
+export const EVENT_DESK_RECORD_KIND = "event_desk";
+
+export function isEventDeskRecord(record) {
+  return record?.recordKind === EVENT_DESK_RECORD_KIND;
+}
+
 /** LEGECI treasurer accounting */
 export const LEGECI_EXPENSES_COLLECTION = "legeci_expenses";
 export const LEGECI_SETTLEMENTS_COLLECTION = "legeci_settlements";
@@ -101,12 +114,20 @@ export const TASK_TYPES = {
   GENERAL: "general",
   ALUMNI_CONNECT: "alumni_connect",
   VOLUNTEER_CERTIFICATE: "volunteer_certificate",
+  EVENT_REGISTRATION: "event_registration",
 };
 
 export const TASK_TYPE_LABELS = {
   [TASK_TYPES.GENERAL]: "General",
   [TASK_TYPES.ALUMNI_CONNECT]: "Alumni Connect",
   [TASK_TYPES.VOLUNTEER_CERTIFICATE]: "Volunteer Certificate",
+  [TASK_TYPES.EVENT_REGISTRATION]: "Event Registration",
+};
+
+export const EVENT_REG_SOURCES = {
+  GOOGLE_FORM: "google_form",
+  ALUMNI_CONNECT: "alumni_connect",
+  SPOT: "spot",
 };
 
 export const CERTIFICATE_SIGNATORIES = [

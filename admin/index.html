@@ -30,6 +30,7 @@
         <li><button class="portal-nav__link" data-panel="teams">Teams</button></li>
         <li><button class="portal-nav__link" data-panel="tasks">Tasks</button></li>
         <li><button class="portal-nav__link" data-panel="alumni">Alumni Connect</button></li>
+        <li><button class="portal-nav__link" data-panel="eventdesk">Event Desk</button></li>
         <li><button class="portal-nav__link" data-panel="leaderboard">Leaderboard</button></li>
         <li><button class="portal-nav__link" data-panel="account">Account</button></li>
       </ul>
@@ -304,7 +305,7 @@
           <h2 class="portal-card__title">Create Main Task</h2>
           <p class="form-hint" style="margin-bottom:1.25rem;">
             Main tasks are created here. Faculty coordinators replicate them for their department.
-            Use <strong>Alumni Connect</strong> for outreach, or <strong>Volunteer Certificate</strong> to assign internship certificate generation.
+            Use <strong>Alumni Connect</strong> for outreach, <strong>Volunteer Certificate</strong> for internship certificates, or <strong>Event Registration</strong> for the on-the-day registration desk.
           </p>
           <form id="mainTaskForm">
             <div class="form-group">
@@ -317,10 +318,12 @@
                 <option value="general">General</option>
                 <option value="alumni_connect">Alumni Connect</option>
                 <option value="volunteer_certificate">Volunteer Certificate</option>
+                <option value="event_registration">Event Registration</option>
               </select>
               <p class="form-hint">
                 <strong>Alumni Connect</strong> lets student volunteers record alumni contacted (willingness + registration/payment status).
                 <strong>Volunteer Certificate</strong> is assigned to faculty coordinators so they can upload intern lists and generate internship certificates.
+                <strong>Event Registration</strong> is assigned to student volunteers at the registration counter (search Google Form / Alumni Connect, or spot register).
               </p>
             </div>
             <div class="form-group">
@@ -370,6 +373,17 @@
         </div>
       </section>
 
+      <section class="portal-panel" id="panel-eventdesk">
+        <div class="portal-card">
+          <h2 class="portal-card__title">Event-day Alumni Registration</h2>
+          <p class="form-hint" style="margin-bottom:1rem;">
+            Upload Google Form responses, then monitor desk check-ins, family headcount, food coupons, and souvenirs.
+            These records stay separate from Alumni Connect.
+          </p>
+          <div id="adminEventDeskWrap"><p class="empty-state">Loading...</p></div>
+        </div>
+      </section>
+
       <!-- Leaderboard -->
       <section class="portal-panel" id="panel-leaderboard">
         <div class="portal-card" style="padding:0;overflow:hidden;border:none;background:transparent;box-shadow:none;">
@@ -385,6 +399,6 @@
   </div>
 
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
-  <script type="module" src="../js/admin.js?v=reset1"></script>
+  <script type="module" src="../js/admin.js?v=er6"></script>
 </body>
 </html>

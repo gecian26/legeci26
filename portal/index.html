@@ -26,6 +26,7 @@
         <li><button class="portal-nav__link" data-panel="dept" id="navDept" hidden>Department Work</button></li>
         <li><button class="portal-nav__link" data-panel="alumni" id="navAlumni" hidden>Alumni Connect</button></li>
         <li><button class="portal-nav__link" data-panel="certificates" id="navCertificates" hidden>Certificates</button></li>
+        <li><button class="portal-nav__link" data-panel="eventdesk" id="navEventDesk" hidden>Event Desk</button></li>
         <li><button class="portal-nav__link" data-panel="leaderboard" id="navLeaderboard" hidden>Leaderboard</button></li>
         <li><button class="portal-nav__link" data-panel="mytasks" id="navMyTasks" hidden>My Tasks</button></li>
         <li><button class="portal-nav__link" data-panel="accounts" id="navAccounts" hidden>Finance</button></li>
@@ -128,7 +129,8 @@
           <h2 class="portal-card__title">Main Tasks (from Admin)</h2>
           <p class="form-hint" style="margin-bottom:1rem;">
             Replicate a main task for your department and assign it to a student team.
-            For <strong>Volunteer Certificate</strong>, replicate the task to assign it, then open <strong>Certificates</strong> to generate PDFs.
+            For <strong>Volunteer Certificate</strong>, replicate then open <strong>Certificates</strong>.
+            For <strong>Event Registration</strong>, replicate then assign volunteers — they check alumni in from <strong>Event Desk</strong>.
           </p>
           <div id="deptMainTasksWrap"><p class="empty-state">Loading...</p></div>
         </div>
@@ -137,6 +139,17 @@
           <h2 class="portal-card__title">Department Tasks — Assign Volunteers</h2>
           <p class="form-hint" style="margin-bottom:1rem;">Assign department volunteers to replicated tasks and update status.</p>
           <div id="deptTasksWrap"><p class="empty-state">Loading...</p></div>
+        </div>
+      </section>
+
+      <section class="portal-panel" id="panel-eventdesk">
+        <div class="portal-card">
+          <h2 class="portal-card__title">Event-day Alumni Registration</h2>
+          <p class="form-hint" style="margin-bottom:1rem;">
+            Check in alumni who already filled the Google Form or appear in Alumni Connect, or add a walk-in under Spot registration.
+            Food coupon and souvenir ticks are confirmation at the counter. These records are separate from Alumni Connect.
+          </p>
+          <div id="eventDeskWrap"><p class="empty-state">Loading...</p></div>
         </div>
       </section>
 
@@ -212,6 +225,6 @@
   </div>
 
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
-  <script type="module" src="../js/portal.js?v=th1"></script>
+  <script type="module" src="../js/portal.js?v=er12"></script>
 </body>
 </html>

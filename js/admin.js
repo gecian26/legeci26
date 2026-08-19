@@ -35,7 +35,7 @@ import {
   formatDateShort,
   escapeHtml,
   showToast,
-} from "../js/constants.js";
+} from "../js/constants.js?v=er2";
 import {
   loadRegistrationSettings,
   saveRegistrationSettings,
@@ -51,7 +51,8 @@ import {
   insightsHtml,
   formatFee,
   statusBadgeHtml,
-} from "../js/alumni-connect.js";
+} from "../js/alumni-connect.js?v=er2";
+import { mountAdminEventDesk } from "../js/event-registration.js?v=er6";
 import { loadLeaderboardPanel } from "../js/leaderboard.js";
 import { downloadAlumniContactsPdf } from "../js/alumni-contacts-pdf.js";
 import {
@@ -82,6 +83,7 @@ const toast = document.getElementById("toast");
 let editingEventId = null;
 let eventPhotos = [];
 let cachedTeams = [];
+let currentAdminSession = null;
 let cachedAdminAlumniContacts = [];
 let adminAlumniFilterBound = false;
 let cachedAdminAlumniFilters = {};
@@ -93,6 +95,7 @@ initAuthGuard([ROLES.ADMIN], (session) => {
 });
 
 function initPortal(session) {
+  currentAdminSession = session;
   document.getElementById("adminName").textContent = session.displayName || "Administrator";
   setupNavigation();
   loadDashboard();
@@ -138,6 +141,7 @@ function setupNavigation() {
     teams: "Teams",
     tasks: "Tasks",
     alumni: "Alumni Connect",
+    eventdesk: "Event Desk",
     leaderboard: "Leaderboard",
     account: "Account",
   };
@@ -153,6 +157,9 @@ function setupNavigation() {
       document.getElementById("sidebar").classList.remove("portal-sidebar--open");
       if (panel === "alumni") {
         loadAdminAlumniDashboard();
+      }
+      if (panel === "eventdesk") {
+        loadAdminEventDesk();
       }
       if (panel === "leaderboard") {
         loadAdminLeaderboard();
@@ -1185,6 +1192,15 @@ async function loadMainTasksTable() {
 }
 
 // ── Alumni Connect consolidated dashboard ─────────────
+async function loadAdminEventDesk() {
+  const wrap = document.getElementById("adminEventDeskWrap");
+  if (!wrap || !currentAdminSession) return;
+  await mountAdminEventDesk(wrap, {
+    session: currentAdminSession,
+    notify: (message, type) => showToast(toast, message, type),
+  });
+}
+
 function setupAlumniConnectDashboard() {
   // Loaded on-demand when the Alumni Connect nav panel is opened.
 }
