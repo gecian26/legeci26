@@ -19,17 +19,17 @@ import {
   escapeHtmlWithOrdinals,
   formatDateShort,
   normalizeUsername,
-} from "./constants.js";
+} from "./constants.js?v=th1";
 import {
   downloadCertificateVolunteerTemplate,
   parseCertificateVolunteerExcel,
-} from "./volunteer-certificates-excel.js";
+} from "./volunteer-certificates-excel.js?v=th1";
 import {
   downloadVolunteerCertificatesPdf,
   downloadSampleCertificatePdf,
   certificateTemplateLabel,
   normalizeCertificateTemplate,
-} from "./volunteer-certificates-pdf.js";
+} from "./volunteer-certificates-pdf.js?v=th1";
 
 export function isVolunteerCertificateTask(task) {
   return task?.taskType === TASK_TYPES.VOLUNTEER_CERTIFICATE;

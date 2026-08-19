@@ -28,7 +28,7 @@ import {
   formatDateShort,
   escapeHtml,
   showToast,
-} from "../js/constants.js";
+} from "../js/constants.js?v=th1";
 import {
   setupPasswordPanel,
   passwordFormHtml,
@@ -75,7 +75,7 @@ import {
 } from "../js/alumni-connect.js";
 import { downloadAlumniContactsPdf } from "../js/alumni-contacts-pdf.js";
 import { loadLeaderboardPanel } from "../js/leaderboard.js";
-import { mountVolunteerCertificates, isCertificateBatchRecord } from "../js/volunteer-certificates.js";
+import { mountVolunteerCertificates, isCertificateBatchRecord } from "../js/volunteer-certificates.js?v=th1";
 import {
   mountTreasurerAccounts,
   loadExpenses,

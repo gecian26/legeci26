@@ -1,7 +1,7 @@
 import writeExcelFile from "https://cdn.jsdelivr.net/npm/write-excel-file@4.1.1/browser/+esm";
 import dataValidationFeature from "https://cdn.jsdelivr.net/npm/@onparallel/write-excel-file-data-validation@1.0.0/+esm";
 import readXlsxFile from "https://cdn.jsdelivr.net/npm/read-excel-file@5.8.8/+esm";
-import { DEPARTMENTS } from "./constants.js";
+import { DEPARTMENTS } from "./constants.js?v=th1";
 
 const DEPARTMENT_CODES = DEPARTMENTS.map((d) => d.value);
 const SEMESTER_VALUES = ["S1", "S2", "S3", "S4", "S5", "S6", "S7", "S8"];

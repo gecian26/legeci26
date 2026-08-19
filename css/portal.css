@@ -2090,6 +2090,13 @@
   line-height: 1.55;
 }
 
+.vc-copy sup {
+  font-size: 0.72em;
+  font-weight: 700;
+  vertical-align: super;
+  line-height: 0;
+}
+
 .vc-actions {
   display: flex;
   flex-wrap: wrap;

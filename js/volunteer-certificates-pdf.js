@@ -8,7 +8,7 @@ import {
   CERTIFICATE_TEMPLATES,
   MEETUP_NAME,
   MEETUP_TAGLINE,
-} from "./constants.js";
+} from "./constants.js?v=th1";
 
 const TEMPLATES = {
   classic: {
@@ -311,13 +311,21 @@ function drawGoldDivider(doc, cx, y, colors, width = 46) {
 }
 
 function segmentFontSize(segment, fontSize) {
-  return segment.sup ? fontSize * 0.58 : fontSize;
+  return segment.sup ? Math.max(9, Math.round(fontSize * 0.78)) : fontSize;
 }
 
 function drawCenteredMixed(doc, segments, cx, startY, maxW, fontSize, lineH, fallbackFamily, fallbackStyle) {
-  const measured = segments.map((s) => {
-    setFace(doc, s.family, s.style, fallbackFamily, fallbackStyle);
+  const applySeg = (s) => {
+    if (s.sup) {
+      doc.setFont("helvetica", "bold");
+    } else {
+      setFace(doc, s.family, s.style, fallbackFamily, fallbackStyle);
+    }
     doc.setFontSize(segmentFontSize(s, fontSize));
+  };
+
+  const measured = segments.map((s) => {
+    applySeg(s);
     return { ...s, width: doc.getTextWidth(s.text) };
   });
 
@@ -341,11 +349,9 @@ function drawCenteredMixed(doc, segments, cx, startY, maxW, fontSize, lineH, fal
     const total = line.reduce((sum, s) => sum + s.width, 0);
     let x = cx - total / 2;
     line.forEach((s) => {
-      const size = segmentFontSize(s, fontSize);
-      setFace(doc, s.family, s.style, fallbackFamily, fallbackStyle);
-      doc.setFontSize(size);
+      applySeg(s);
       doc.setTextColor(...s.color);
-      const baseline = s.sup ? y - fontSize * 0.145 : y;
+      const baseline = s.sup ? y - 2.1 : y;
       doc.text(s.text, x, baseline);
       x += s.width;
     });
