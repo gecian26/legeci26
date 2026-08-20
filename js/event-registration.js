@@ -17,12 +17,13 @@ import {
   EVENT_DESK_PREREG_DOC,
   EVENT_DESK_RECORD_KIND,
   isEventDeskRecord,
+  isEventDeskTestRecord,
   EVENT_REG_SOURCES,
   DEPARTMENTS,
   MAX_MEMBERS_ATTENDING,
   escapeHtml,
   normalizeUsername,
-} from "./constants.js?v=er2";
+} from "./constants.js?v=er13";
 import {
   jobSectorOptionsHtml,
   passoutYearSearchFieldHtml,
@@ -31,7 +32,7 @@ import {
   normalizePersonName,
   normalizeMembersAttending,
 } from "./alumni-connect.js?v=er4";
-import { parseAlumniRegistrationExcel, inferDepartmentCode } from "./event-registration-excel.js?v=er9";
+import { parseAlumniRegistrationExcel, inferDepartmentCode } from "./event-registration-excel.js?v=er14";
 
 export function isEventRegistrationTask(task) {
   return inferTaskTypeFromTitle(task) === TASK_TYPES.EVENT_REGISTRATION;
@@ -227,6 +228,27 @@ export async function savePreRegistrationsFromExcel(file) {
   return { saved: stamped.length, errors };
 }
 
+function normalizeAccompanyingFamily(value) {
+  const n = Math.floor(Number(value));
+  if (!Number.isFinite(n) || n < 0) return 0;
+  return Math.min(n, MAX_MEMBERS_ATTENDING - 1);
+}
+
+function partySizeFromAccompanying(value) {
+  return 1 + normalizeAccompanyingFamily(value);
+}
+
+function accompanyingOf(row) {
+  if (row?.familyAccompanying != null && String(row.familyAccompanying).trim() !== "") {
+    return normalizeAccompanyingFamily(row.familyAccompanying);
+  }
+  return Math.max(0, normalizeMembersAttending(row?.membersAttending) - 1);
+}
+
+function partySizeOf(row) {
+  return partySizeFromAccompanying(accompanyingOf(row));
+}
+
 function foodCouponCountOf(row) {
   if (!row?.foodCouponIssued) return 0;
   const n = Math.floor(Number(row.foodCouponCount));
@@ -251,7 +273,11 @@ function wireFoodCouponControls(prefix) {
   const membersEl = document.getElementById(`${prefix}Members`);
   if (!foodEl || !countEl) return;
 
-  const membersDefault = () => String(normalizeMembersAttending(membersEl?.value));
+  const membersDefault = () => String(partySizeFromAccompanying(membersEl?.value));
+  const partyEl = document.getElementById(`${prefix}PartySize`);
+  const updateParty = () => {
+    if (partyEl) partyEl.textContent = String(partySizeFromAccompanying(membersEl?.value));
+  };
   const sync = () => {
     countEl.disabled = !foodEl.checked;
     if (foodEl.checked) {
@@ -263,19 +289,28 @@ function wireFoodCouponControls(prefix) {
   };
 
   foodEl.addEventListener("change", sync);
-  membersEl?.addEventListener("change", () => {
+  membersEl?.addEventListener("input", () => {
+    updateParty();
     if (!foodEl.checked) return;
     const n = Math.floor(Number(countEl.value));
     if (!Number.isFinite(n) || n < 1) countEl.value = membersDefault();
   });
+  membersEl?.addEventListener("change", () => {
+    updateParty();
+    if (!foodEl.checked) return;
+    const n = Math.floor(Number(countEl.value));
+    if (!Number.isFinite(n) || n < 1) countEl.value = membersDefault();
+  });
+  updateParty();
   sync();
 }
 
 function enrollmentFormHtml(prefix, record = {}, { lockedIdentity = false, foodIssuedTotal: issuedTotal = 0 } = {}) {
   const r = record || {};
   const couponValue = r.foodCouponIssued
-    ? foodCouponCountOf(r) || normalizeMembersAttending(r.membersAttending)
+    ? foodCouponCountOf(r) || partySizeOf(r)
     : 0;
+  const accompanying = accompanyingOf(r);
   return `
     <div class="form-row">
       <div class="form-group">
@@ -295,8 +330,9 @@ function enrollmentFormHtml(prefix, record = {}, { lockedIdentity = false, foodI
         ${passoutYearSearchFieldHtml(prefix, r.batch || "")}
       </div>
       <div class="form-group">
-        <label for="${prefix}Members">Family members (including alumni) <span class="required">*</span></label>
-        <input type="number" id="${prefix}Members" min="1" max="${MAX_MEMBERS_ATTENDING}" value="${escapeHtml(String(normalizeMembersAttending(r.membersAttending)))}">
+        <label for="${prefix}Members">Accompanying family</label>
+        <input type="number" id="${prefix}Members" min="0" max="${MAX_MEMBERS_ATTENDING - 1}" value="${escapeHtml(String(accompanying))}">
+        <p class="form-hint">Exclude the alumni. People in this group: <strong id="${prefix}PartySize">${partySizeOf(r)}</strong></p>
       </div>
     </div>
     <div class="form-row">
@@ -358,9 +394,10 @@ function readEnrollmentForm(prefix, { departmentLocked } = {}) {
   const company = document.getElementById(`${prefix}Company`)?.value.trim() || "";
   const jobSector = document.getElementById(`${prefix}JobSector`)?.value || "";
   const jobRole = document.getElementById(`${prefix}JobRole`)?.value.trim() || "";
-  const membersAttending = normalizeMembersAttending(
+  const familyAccompanying = normalizeAccompanyingFamily(
     document.getElementById(`${prefix}Members`)?.value
   );
+  const membersAttending = partySizeFromAccompanying(familyAccompanying);
   const foodCouponIssued = !!document.getElementById(`${prefix}Food`)?.checked;
   const foodCouponCount = normalizeFoodCouponCount(
     document.getElementById(`${prefix}FoodCount`)?.value,
@@ -390,6 +427,7 @@ function readEnrollmentForm(prefix, { departmentLocked } = {}) {
       jobSector,
       jobRole,
       membersAttending,
+      familyAccompanying,
       foodCouponIssued,
       foodCouponCount,
       souvenirIssued,
@@ -404,6 +442,26 @@ function findExistingCheckIn(enrollments, candidate) {
     .trim();
   const name = normalizePersonName(candidate.alumniName);
   return enrollments.find((r) => {
+    if (isEventDeskTestRecord(r)) return false;
+    const rPhone = normalizePhoneDigits(r.mobile || r.whatsapp);
+    const rEmail = String(r.email || "")
+      .toLowerCase()
+      .trim();
+    const rName = normalizePersonName(r.alumniName);
+    if (phone && rPhone && phone === rPhone) return true;
+    if (email && rEmail && email === rEmail && name && rName === name) return true;
+    return false;
+  });
+}
+
+function findTestCheckIn(enrollments, candidate) {
+  const phone = normalizePhoneDigits(candidate.mobile || candidate.whatsapp);
+  const email = String(candidate.email || "")
+    .toLowerCase()
+    .trim();
+  const name = normalizePersonName(candidate.alumniName);
+  return enrollments.find((r) => {
+    if (!isEventDeskTestRecord(r)) return false;
     const rPhone = normalizePhoneDigits(r.mobile || r.whatsapp);
     const rEmail = String(r.email || "")
       .toLowerCase()
@@ -421,6 +479,7 @@ async function saveCheckIn(payload) {
     recordKind: EVENT_DESK_RECORD_KIND,
     whatsapp: payload.whatsapp || payload.mobile,
     deptTaskId: payload.deptTaskId || "event_desk",
+    isTest: payload.isTest === true,
     updatedAt: serverTimestamp(),
   };
   if (payload.id) {
@@ -476,7 +535,14 @@ function normalizeLookupPerson(row, extras = {}) {
     batch,
     department,
     departmentLabel: departmentLabelText || (department ? departmentLabel(department) : ""),
-    membersAttending: normalizeMembersAttending(row.membersAttending || row.familyMembers || row.members),
+    membersAttending: partySizeOf({
+      membersAttending: row.membersAttending || row.familyMembers || row.members,
+      familyAccompanying: row.familyAccompanying,
+    }),
+    familyAccompanying: accompanyingOf({
+      membersAttending: row.membersAttending || row.familyMembers || row.members,
+      familyAccompanying: row.familyAccompanying,
+    }),
     company: String(row.company || "").trim(),
     address: String(row.address || "").trim(),
     jobRole: String(row.jobRole || "").trim(),
@@ -511,13 +577,13 @@ function lookupResultsHtml(results, emptyMessage) {
 function lookupCardHtml(item) {
   const enrolled = item.alreadyCheckedIn;
   const phone = item.mobile || item.whatsapp || "";
-  const members = Number(item.membersAttending);
+  const family = accompanyingOf(item);
   const meta = [
     displayDepartment(item),
     item.batch,
     phone,
     item.email,
-    Number.isFinite(members) && members > 1 ? `${members} members` : "",
+    family > 0 ? `${family} family` : "",
   ].filter(isPresent);
   if (meta.length < 2 && isPresent(item.company)) meta.push(item.company);
   if (!meta.length) meta.push("Details incomplete — open to fill in");
@@ -538,7 +604,7 @@ function checkInRowHtml(row, { canEdit = true } = {}) {
       <td><strong>${escapeHtml(row.alumniName || "—")}</strong><br><small style="color:var(--slate-500)">${escapeHtml(sourceLabel(row.source))}</small></td>
       <td>${escapeHtml(departmentLabel(row.department))}${row.batch ? `<br><small>${escapeHtml(row.batch)}</small>` : ""}</td>
       <td>${escapeHtml(row.mobile || row.whatsapp || "—")}<br><small style="color:var(--slate-500)">${escapeHtml(row.email || "")}</small></td>
-      <td>${escapeHtml(String(row.membersAttending || 1))}</td>
+      <td>${partySizeOf(row)}${accompanyingOf(row) ? `<br><small>${accompanyingOf(row)} family</small>` : ""}</td>
       <td>
         ${
           canEdit
@@ -595,7 +661,7 @@ function buildLookupList(preRegs, contacts, enrollments, query) {
   return merged;
 }
 
-async function persistCheckIn({ session, task, source, sourceId, formPrefix, existing, departmentLocked }) {
+async function persistCheckIn({ session, task, source, sourceId, formPrefix, existing, enrollments, departmentLocked }) {
   const parsed = readEnrollmentForm(formPrefix, { departmentLocked });
   if (parsed.errors.length) {
     throw new Error(parsed.errors[0]);
@@ -607,9 +673,13 @@ async function persistCheckIn({ session, task, source, sourceId, formPrefix, exi
     deptTaskId: task?.id || "",
     taskTitle: task?.title || "Event Registration",
     volunteerDepartment: session.department || "",
+    isTest: false,
   };
-  if (existing?.id) {
-    payload.id = existing.id;
+  const live = existing?.id && !isEventDeskTestRecord(existing) ? existing : findExistingCheckIn(enrollments || [], parsed.data);
+  const testHit = findTestCheckIn(enrollments || [], parsed.data);
+  const row = live || testHit;
+  if (row?.id) {
+    payload.id = row.id;
   } else {
     payload.createdByUserId = normalizeUsername(session.username);
     payload.createdByName = session.displayName || session.username;
@@ -667,6 +737,7 @@ export async function mountEventDesk(wrap, { session, notify, mode = "volunteer"
 
   function render() {
     const canSave = isAdmin || isFaculty || !!state.task;
+    const liveEnrollments = (state.enrollments || []).filter((r) => !isEventDeskTestRecord(r));
     const results = buildLookupList(state.preRegs, state.contacts, state.enrollments, state.query);
     state.lookup = results;
 
@@ -724,7 +795,7 @@ export async function mountEventDesk(wrap, { session, notify, mode = "volunteer"
         <div class="er-panel" ${state.tab === "spot" ? "" : "hidden"}>
           <h3 class="er-subtitle">New walk-in alumni</h3>
           <form id="erSpotForm">
-            <div id="erSpotFields">${enrollmentFormHtml("erSpot", {}, { foodIssuedTotal: foodIssuedTotal(state.enrollments) })}</div>
+            <div id="erSpotFields">${enrollmentFormHtml("erSpot", {}, { foodIssuedTotal: foodIssuedTotal(liveEnrollments) })}</div>
             <div style="margin-top:1rem;">
               <button type="submit" class="btn btn--primary" ${canSave ? "" : "disabled"}>Save spot registration</button>
               ${canSave ? "" : `<p class="form-hint">Assigned Event Registration volunteers can save check-ins.</p>`}
@@ -734,12 +805,12 @@ export async function mountEventDesk(wrap, { session, notify, mode = "volunteer"
 
         <div class="er-today">
           <h3 class="er-subtitle">Desk registrations ${deptFilter ? `(${escapeHtml(departmentLabel(deptFilter))})` : ""}</h3>
-          <p class="form-hint">${state.enrollments.length} checked in · Food ${foodIssuedTotal(state.enrollments)} · Souvenir ${state.enrollments.filter((r) => r.souvenirIssued).length}</p>
+          <p class="form-hint">${liveEnrollments.length} checked in · Food ${foodIssuedTotal(liveEnrollments)} · Souvenir ${liveEnrollments.filter((r) => r.souvenirIssued).length}</p>
           ${
-            state.enrollments.length
+            liveEnrollments.length
               ? `<div class="table-scroll"><table class="data-table">
-                  <thead><tr><th>Alumni</th><th>Dept</th><th>Contact</th><th>Members</th><th>Issued</th></tr></thead>
-                  <tbody>${state.enrollments.map((r) => checkInRowHtml(r, { canEdit: canSave })).join("")}</tbody>
+                  <thead><tr><th>Alumni</th><th>Dept</th><th>Contact</th><th>People</th><th>Issued</th></tr></thead>
+                  <tbody>${liveEnrollments.map((r) => checkInRowHtml(r, { canEdit: canSave })).join("")}</tbody>
                 </table></div>`
               : `<p class="empty-state">No desk registrations yet.</p>`
           }
@@ -773,7 +844,7 @@ export async function mountEventDesk(wrap, { session, notify, mode = "volunteer"
         };
     fields.innerHTML = enrollmentFormHtml("erPre", seed, {
       lockedIdentity: false,
-      foodIssuedTotal: foodIssuedTotal(state.enrollments),
+      foodIssuedTotal: foodIssuedTotal((state.enrollments || []).filter((r) => !isEventDeskTestRecord(r))),
     });
     wireFoodCouponControls("erPre");
   }
@@ -821,6 +892,7 @@ export async function mountEventDesk(wrap, { session, notify, mode = "volunteer"
           sourceId: state.selected.sourceId,
           formPrefix: "erPre",
           existing: state.selected.existing,
+          enrollments: state.enrollments,
         });
         toast("Registration saved.", "success");
         state.selected = null;
@@ -845,6 +917,7 @@ export async function mountEventDesk(wrap, { session, notify, mode = "volunteer"
           sourceId: "",
           formPrefix: "erSpot",
           existing,
+          enrollments: state.enrollments,
         });
         toast(existing ? "Updated existing check-in." : "Spot registration saved.", "success");
         await refreshLists();
@@ -904,10 +977,11 @@ export async function mountEventDesk(wrap, { session, notify, mode = "volunteer"
           row.foodCouponIssued = issued;
           row.foodCouponCount = foodCouponCount;
           row.souvenirIssued = !!souvenirEl?.checked;
-          const total = foodIssuedTotal(state.enrollments);
+          const live = (state.enrollments || []).filter((r) => !isEventDeskTestRecord(r));
+          const total = foodIssuedTotal(live);
           const hint = wrap.querySelector(".er-today > .form-hint");
           if (hint) {
-            hint.textContent = `${state.enrollments.length} checked in · Food ${total} · Souvenir ${state.enrollments.filter((r) => r.souvenirIssued).length}`;
+            hint.textContent = `${live.length} checked in · Food ${total} · Souvenir ${live.filter((r) => r.souvenirIssued).length}`;
           }
           wrap.querySelectorAll(".er-food-total strong").forEach((el) => {
             el.textContent = String(total);
@@ -949,10 +1023,9 @@ function countBy(list, fn) {
 }
 
 export function summarizeEventDesk({ preRegs = [], contacts = [], enrollments = [] } = {}) {
-  const people = enrollments.reduce(
-    (n, r) => n + normalizeMembersAttending(r.membersAttending),
-    0
-  );
+  const testCount = (enrollments || []).filter(isEventDeskTestRecord).length;
+  enrollments = (enrollments || []).filter((r) => !isEventDeskTestRecord(r));
+  const people = enrollments.reduce((n, r) => n + partySizeOf(r), 0);
   const foodCheckIns = enrollments.filter((r) => r.foodCouponIssued).length;
   const food = foodIssuedTotal(enrollments);
   const souvenir = enrollments.filter((r) => r.souvenirIssued).length;
@@ -969,7 +1042,7 @@ export function summarizeEventDesk({ preRegs = [], contacts = [], enrollments = 
       code: d.value,
       label: d.label,
       checkIns: rows.length,
-      people: rows.reduce((n, r) => n + normalizeMembersAttending(r.membersAttending), 0),
+      people: rows.reduce((n, r) => n + partySizeOf(r), 0),
       food: foodIssuedTotal(rows),
       souvenir: rows.filter((r) => r.souvenirIssued).length,
       spot: rows.filter((r) => r.source === EVENT_REG_SOURCES.SPOT).length,
@@ -983,7 +1056,7 @@ export function summarizeEventDesk({ preRegs = [], contacts = [], enrollments = 
       code: "OTHER",
       label: "Other / unset",
       checkIns: other.length,
-      people: other.reduce((n, r) => n + normalizeMembersAttending(r.membersAttending), 0),
+      people: other.reduce((n, r) => n + partySizeOf(r), 0),
       food: foodIssuedTotal(other),
       souvenir: other.filter((r) => r.souvenirIssued).length,
       spot: other.filter((r) => r.source === EVENT_REG_SOURCES.SPOT).length,
@@ -1007,6 +1080,7 @@ export function summarizeEventDesk({ preRegs = [], contacts = [], enrollments = 
     deptRows,
     batches: countBy(enrollments, (r) => r.batch || "—"),
     volunteers: countBy(enrollments, (r) => r.createdByName || r.createdByUserId || "—"),
+    testCount,
   };
 }
 
@@ -1022,6 +1096,7 @@ function erStatCardsHtml(stats) {
     { label: "From Google Form", value: stats.bySource.google_form, tone: "neutral" },
     { label: "From Alumni Connect", value: stats.bySource.alumni_connect, tone: "neutral" },
     { label: "Form yet to arrive", value: stats.pendingForm, tone: stats.pendingForm ? "warn" : "good" },
+    { label: "Test check-ins", value: stats.testCount || 0, tone: stats.testCount ? "warn" : "neutral" },
   ];
   return `
     <div class="ac-stat-grid">
@@ -1041,6 +1116,8 @@ function filterDeskRows(rows, { search = "", department = "", source = "", issue
   return (rows || []).filter((r) => {
     if (department && r.department !== department) return false;
     if (source && r.source !== source) return false;
+    if (issue === "test" && !isEventDeskTestRecord(r)) return false;
+    if (issue === "live" && isEventDeskTestRecord(r)) return false;
     if (issue === "food" && !r.foodCouponIssued) return false;
     if (issue === "food_pending" && r.foodCouponIssued) return false;
     if (issue === "souvenir" && !r.souvenirIssued) return false;
@@ -1214,6 +1291,8 @@ export async function mountAdminEventDesk(wrap, { session, notify } = {}) {
               <label for="erAdmIssue">Issued</label>
               <select id="erAdmIssue">
                 <option value="">All</option>
+                <option value="live" ${state.issue === "live" ? "selected" : ""}>Live check-ins</option>
+                <option value="test" ${state.issue === "test" ? "selected" : ""}>Test only</option>
                 <option value="food" ${state.issue === "food" ? "selected" : ""}>Food issued</option>
                 <option value="food_pending" ${state.issue === "food_pending" ? "selected" : ""}>Food pending</option>
                 <option value="souvenir" ${state.issue === "souvenir" ? "selected" : ""}>Souvenir issued</option>
@@ -1221,7 +1300,7 @@ export async function mountAdminEventDesk(wrap, { session, notify } = {}) {
               </select>
             </div>
           </div>
-          <p class="form-hint">Showing ${filtered.length} of ${state.enrollments.length} check-ins.</p>
+          <p class="form-hint">Showing ${filtered.length} of ${state.enrollments.length} check-ins. Test rows are treated as unregistered at the desk.</p>
           <div class="table-scroll">
             <table class="data-table">
               <thead>
@@ -1229,10 +1308,11 @@ export async function mountAdminEventDesk(wrap, { session, notify } = {}) {
                   <th>Alumni</th>
                   <th>Dept / year</th>
                   <th>Contact</th>
-                  <th>Members</th>
+                  <th>People</th>
                   <th>Work</th>
                   <th>Source</th>
                   <th>Issued</th>
+                  <th>Test</th>
                   <th>By</th>
                 </tr>
               </thead>
@@ -1242,14 +1322,15 @@ export async function mountAdminEventDesk(wrap, { session, notify } = {}) {
                     ? filtered
                         .map(
                           (r) => `
-                  <tr>
+                  <tr class="${isEventDeskTestRecord(r) ? "er-row--test" : ""}">
                     <td>
                       <strong>${escapeHtml(r.alumniName || "—")}</strong>
+                      ${isEventDeskTestRecord(r) ? ' <span class="badge badge--source-spot">Test</span>' : ""}
                       ${r.address ? `<br><small style="color:var(--slate-500)">${escapeHtml(r.address)}</small>` : ""}
                     </td>
                     <td>${escapeHtml(departmentLabel(r.department))}${r.batch ? `<br><small>${escapeHtml(r.batch)}</small>` : ""}</td>
                     <td>${escapeHtml(r.mobile || r.whatsapp || "—")}${r.email ? `<br><small style="color:var(--slate-500)">${escapeHtml(r.email)}</small>` : ""}</td>
-                    <td>${escapeHtml(String(r.membersAttending || 1))}</td>
+                    <td>${partySizeOf(r)}${accompanyingOf(r) ? `<br><small>${accompanyingOf(r)} family</small>` : ""}</td>
                     <td>${escapeHtml(r.company || "—")}${r.jobRole || r.jobSector ? `<br><small style="color:var(--slate-500)">${escapeHtml([r.jobRole, r.jobSector].filter(Boolean).join(" · "))}</small>` : ""}</td>
                     <td>${escapeHtml(sourceLabel(r.source))}</td>
                     <td>
@@ -1257,11 +1338,14 @@ export async function mountAdminEventDesk(wrap, { session, notify } = {}) {
                       <input type="number" class="er-food-count-input" min="0" max="${MAX_MEMBERS_ATTENDING}" data-er-food-count="${escapeHtml(r.id)}" value="${escapeHtml(String(foodCouponCountOf(r)))}" ${r.foodCouponIssued ? "" : "disabled"} aria-label="Food coupons">
                       <label class="checkbox-label"><input type="checkbox" data-er-souvenir="${escapeHtml(r.id)}" ${r.souvenirIssued ? "checked" : ""}> Souvenir</label>
                     </td>
+                    <td>
+                      <label class="checkbox-label"><input type="checkbox" data-er-test="${escapeHtml(r.id)}" ${isEventDeskTestRecord(r) ? "checked" : ""}> Mark as test</label>
+                    </td>
                     <td>${escapeHtml(r.createdByName || r.createdByUserId || "—")}</td>
                   </tr>`
                         )
                         .join("")
-                    : `<tr><td colspan="8" class="empty-state">No matching check-ins.</td></tr>`
+                    : `<tr><td colspan="9" class="empty-state">No matching check-ins.</td></tr>`
                 }
               </tbody>
             </table>
@@ -1345,6 +1429,38 @@ export async function mountAdminEventDesk(wrap, { session, notify } = {}) {
           console.error(err);
           toast("Could not update coupon / souvenir.", "error");
           if (input.type === "checkbox") input.checked = !input.checked;
+        }
+      });
+    });
+    wrap.querySelectorAll("[data-er-test]").forEach((input) => {
+      input.addEventListener("change", async () => {
+        const id = input.dataset.erTest;
+        const row = state.enrollments.find((r) => r.id === id);
+        if (!row) return;
+        const isTest = !!input.checked;
+        try {
+          await updateDoc(
+            doc(db, ALUMNI_CONTACTS_COLLECTION, id),
+            withSession({
+              department: row.department,
+              createdByUserId: row.createdByUserId,
+              recordKind: EVENT_DESK_RECORD_KIND,
+              isTest,
+              updatedAt: serverTimestamp(),
+            })
+          );
+          row.isTest = isTest;
+          toast(
+            isTest
+              ? `${row.alumniName || "Alumni"} marked as test and treated as unregistered.`
+              : `${row.alumniName || "Alumni"} is a live check-in again.`,
+            "success"
+          );
+          render();
+        } catch (err) {
+          console.error(err);
+          toast("Could not update test flag.", "error");
+          input.checked = !input.checked;
         }
       });
     });

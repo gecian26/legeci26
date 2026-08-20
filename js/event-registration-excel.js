@@ -60,13 +60,13 @@ export function inferJobSector(value) {
   return "";
 }
 
-function parseMembers(value) {
+function parseAccompanying(value) {
   const raw = cellText(value);
-  if (!raw) return 1;
+  if (!raw) return 0;
   const digits = raw.match(/\d+/);
-  const n = digits ? Number(digits[0]) : 1;
-  if (!Number.isFinite(n) || n < 1) return 1;
-  return Math.min(n, MAX_MEMBERS_ATTENDING);
+  const n = digits ? Number(digits[0]) : 0;
+  if (!Number.isFinite(n) || n < 0) return 0;
+  return Math.min(n, MAX_MEMBERS_ATTENDING - 1);
 }
 
 function parseYear(value) {
@@ -178,6 +178,7 @@ export async function parseAlumniRegistrationExcel(file) {
     const jobSectorRaw = col.jobSector >= 0 ? cellText(row[col.jobSector]) : "";
     const jobRole = col.jobRole >= 0 ? cellText(row[col.jobRole]) : "";
 
+    const familyAccompanying = col.members >= 0 ? parseAccompanying(row[col.members]) : 0;
     records.push({
       alumniName,
       email,
@@ -190,7 +191,8 @@ export async function parseAlumniRegistrationExcel(file) {
       batch: col.batch >= 0 ? parseYear(row[col.batch]) : "",
       department: inferDepartmentCode(departmentLabel),
       departmentLabel,
-      membersAttending: col.members >= 0 ? parseMembers(row[col.members]) : 1,
+      familyAccompanying,
+      membersAttending: 1 + familyAccompanying,
       formTimestamp: col.timestamp >= 0 ? cellText(row[col.timestamp]) : "",
       excelRow: i + 1,
     });

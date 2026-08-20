@@ -80,6 +80,11 @@ export function isEventDeskRecord(record) {
   return record?.recordKind === EVENT_DESK_RECORD_KIND;
 }
 
+/** Event Desk check-ins flagged in admin for testing — treated as not registered. */
+export function isEventDeskTestRecord(record) {
+  return record?.isTest === true;
+}
+
 /** LEGECI treasurer accounting */
 export const LEGECI_EXPENSES_COLLECTION = "legeci_expenses";
 export const LEGECI_SETTLEMENTS_COLLECTION = "legeci_settlements";
