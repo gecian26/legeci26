@@ -76,7 +76,7 @@ import {
 import { downloadAlumniContactsPdf } from "../js/alumni-contacts-pdf.js";
 import { loadLeaderboardPanel } from "../js/leaderboard.js";
 import { mountVolunteerCertificates, isCertificateBatchRecord } from "../js/volunteer-certificates.js?v=th1";
-import { mountEventDesk, inferTaskTypeFromTitle } from "../js/event-registration.js?v=er14";
+import { mountEventDesk, inferTaskTypeFromTitle } from "../js/event-registration.js?v=er15";
 import {
   mountTreasurerAccounts,
   loadExpenses,

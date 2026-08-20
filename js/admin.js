@@ -52,7 +52,7 @@ import {
   formatFee,
   statusBadgeHtml,
 } from "../js/alumni-connect.js?v=er2";
-import { mountAdminEventDesk } from "../js/event-registration.js?v=er14";
+import { mountAdminEventDesk } from "../js/event-registration.js?v=er15";
 import { loadLeaderboardPanel } from "../js/leaderboard.js";
 import { downloadAlumniContactsPdf } from "../js/alumni-contacts-pdf.js";
 import {

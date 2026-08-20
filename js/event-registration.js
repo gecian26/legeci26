@@ -274,10 +274,6 @@ function wireFoodCouponControls(prefix) {
   if (!foodEl || !countEl) return;
 
   const membersDefault = () => String(partySizeFromAccompanying(membersEl?.value));
-  const partyEl = document.getElementById(`${prefix}PartySize`);
-  const updateParty = () => {
-    if (partyEl) partyEl.textContent = String(partySizeFromAccompanying(membersEl?.value));
-  };
   const sync = () => {
     countEl.disabled = !foodEl.checked;
     if (foodEl.checked) {
@@ -290,18 +286,15 @@ function wireFoodCouponControls(prefix) {
 
   foodEl.addEventListener("change", sync);
   membersEl?.addEventListener("input", () => {
-    updateParty();
     if (!foodEl.checked) return;
     const n = Math.floor(Number(countEl.value));
     if (!Number.isFinite(n) || n < 1) countEl.value = membersDefault();
   });
   membersEl?.addEventListener("change", () => {
-    updateParty();
     if (!foodEl.checked) return;
     const n = Math.floor(Number(countEl.value));
     if (!Number.isFinite(n) || n < 1) countEl.value = membersDefault();
   });
-  updateParty();
   sync();
 }
 
@@ -332,7 +325,6 @@ function enrollmentFormHtml(prefix, record = {}, { lockedIdentity = false, foodI
       <div class="form-group">
         <label for="${prefix}Members">Accompanying family</label>
         <input type="number" id="${prefix}Members" min="0" max="${MAX_MEMBERS_ATTENDING - 1}" value="${escapeHtml(String(accompanying))}">
-        <p class="form-hint">Exclude the alumni. People in this group: <strong id="${prefix}PartySize">${partySizeOf(r)}</strong></p>
       </div>
     </div>
     <div class="form-row">
