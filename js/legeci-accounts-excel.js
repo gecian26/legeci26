@@ -17,7 +17,7 @@ import {
   summarizeAccounts,
   summarizeRegistrationFees,
   contactFeeRemarks,
-} from "./legeci-accounts.js?v=fn1";
+} from "./legeci-accounts.js?v=fn2";
 
 const HEADER_STYLE = {
   fontWeight: "bold",

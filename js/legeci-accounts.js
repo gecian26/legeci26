@@ -340,12 +340,13 @@ export async function mountTreasurerAccounts(wrap, { toast, session, readOnly = 
             <h2 class="acct-hero__title">${readOnly ? "Finance details" : "Money at a glance"}</h2>
             <p class="acct-hero__sub">${
               readOnly
-                ? "Registration fees and expense details across LEGECI (view only). Download an Excel report from the button on the right."
-                : "Track expenses paid to coordinators and registration fees received from alumni. Download an Excel report anytime."
+                ? "Registration fees and expense details across LEGECI (view only). Download Excel or a paid-alumni PDF from the buttons on the right."
+                : "Track expenses paid to coordinators and registration fees received from alumni. Download Excel or a paid-alumni PDF anytime."
             }</p>
           </div>
           <div class="acct-hero__actions">
             <button type="button" class="btn btn--ghost btn--sm" data-acct-export="full">Download Excel report</button>
+            <button type="button" class="btn btn--ghost btn--sm" data-acct-pdf="paid">PDF: paid alumni</button>
             ${
               readOnly
                 ? ""
@@ -552,7 +553,9 @@ export async function mountTreasurerAccounts(wrap, { toast, session, readOnly = 
           <div class="acct-fees__stats">
             <span><strong>${formatINR(fees.receivedTotal)}</strong> received (${fees.paidCount} · ${fees.paidMembers || 0} people)</span>
             <span><strong>${formatINR(fees.pendingTotal)}</strong> pending (${fees.pendingCount} · ${fees.pendingMembers || 0} people)</span>
-            <button type="button" class="btn btn--ghost btn--sm" data-acct-export="fees-view">Export this list</button>
+            <button type="button" class="btn btn--ghost btn--sm" data-acct-export="fees-view">Excel: this list</button>
+            <button type="button" class="btn btn--ghost btn--sm" data-acct-pdf="paid">PDF: paid alumni</button>
+            <button type="button" class="btn btn--ghost btn--sm" data-acct-pdf="fees-view">PDF: this list</button>
             ${
               readOnly
                 ? ""
@@ -892,7 +895,7 @@ export async function mountTreasurerAccounts(wrap, { toast, session, readOnly = 
         const kind = exportBtn.dataset.acctExport || "full";
         exportBtn.disabled = true;
         try {
-          const { downloadFinanceExcel } = await import("./legeci-accounts-excel.js?v=fn1");
+          const { downloadFinanceExcel } = await import("./legeci-accounts-excel.js?v=fn2");
           await downloadFinanceExcel({
             kind,
             contacts,
@@ -914,6 +917,34 @@ export async function mountTreasurerAccounts(wrap, { toast, session, readOnly = 
           showToast(toast, "Could not generate the Excel report.", "error");
         } finally {
           exportBtn.disabled = false;
+        }
+        return;
+      }
+
+      const pdfBtn = e.target.closest("[data-acct-pdf]");
+      if (pdfBtn) {
+        const kind = pdfBtn.dataset.acctPdf || "paid";
+        pdfBtn.disabled = true;
+        try {
+          const { downloadFinanceAlumniPdf } = await import("./legeci-accounts-pdf.js?v=fn3");
+          await downloadFinanceAlumniPdf({
+            kind,
+            contacts,
+            feeSettings,
+            feeRows: kind === "fees-view" ? filteredFeeContacts() : null,
+            feeFilter,
+            generatedBy: session?.displayName || session?.username || "",
+          });
+          showToast(
+            toast,
+            kind === "fees-view" ? "Fee list PDF downloaded." : "Paid alumni PDF downloaded.",
+            "success"
+          );
+        } catch (err) {
+          console.error(err);
+          showToast(toast, "Could not generate the PDF.", "error");
+        } finally {
+          pdfBtn.disabled = false;
         }
         return;
       }
