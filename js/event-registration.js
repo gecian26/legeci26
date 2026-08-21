@@ -11,6 +11,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-firestore.js";
 import { withSession } from "./auth.js";
 import {
+  ROLES,
   TASK_TYPES,
   DEPT_TASKS_COLLECTION,
   ALUMNI_CONTACTS_COLLECTION,
@@ -19,11 +20,13 @@ import {
   isEventDeskRecord,
   isEventDeskTestRecord,
   EVENT_REG_SOURCES,
+  EVENT_DESK_STAFF_DEPT,
+  EVENT_STAFF_ROLES,
   DEPARTMENTS,
   MAX_MEMBERS_ATTENDING,
   escapeHtml,
   normalizeUsername,
-} from "./constants.js?v=er13";
+} from "./constants.js?v=er18";
 import {
   jobSectorOptionsHtml,
   passoutYearSearchFieldHtml,
@@ -105,12 +108,51 @@ function departmentOptionsHtml(selected = "") {
 }
 
 function departmentLabel(code) {
+  if (code === EVENT_DESK_STAFF_DEPT) return "College staff";
   return DEPARTMENTS.find((d) => d.value === code)?.label || code || "—";
+}
+
+function isStaffCheckIn(row) {
+  return row?.source === EVENT_REG_SOURCES.STAFF || row?.guestKind === "staff";
+}
+
+function omitUndefined(obj) {
+  return Object.fromEntries(Object.entries(obj || {}).filter(([, value]) => value !== undefined));
+}
+
+function deskGuestLabel(row) {
+  return isStaffCheckIn(row) ? "former staff" : "alumni";
+}
+
+function staffRoleLabel(value) {
+  return EVENT_STAFF_ROLES.find((r) => r.value === value)?.label || value || "Staff";
+}
+
+function staffRoleOptionsHtml(selected = "") {
+  return (
+    '<option value="">Select role</option>' +
+    EVENT_STAFF_ROLES.map(
+      (r) =>
+        `<option value="${escapeHtml(r.value)}" ${r.value === selected ? "selected" : ""}>${escapeHtml(r.label)}</option>`
+    ).join("")
+  );
+}
+
+function staffDepartmentOptionsHtml(selected = "") {
+  const value = selected === EVENT_DESK_STAFF_DEPT ? "" : selected;
+  return (
+    '<option value="">College-wide / not a branch</option>' +
+    DEPARTMENTS.map(
+      (d) =>
+        `<option value="${escapeHtml(d.value)}" ${d.value === value ? "selected" : ""}>${escapeHtml(d.label)}</option>`
+    ).join("")
+  );
 }
 
 function sourceBadgeClass(source) {
   if (source === EVENT_REG_SOURCES.GOOGLE_FORM) return "badge--source-form";
   if (source === EVENT_REG_SOURCES.ALUMNI_CONNECT) return "badge--source-connect";
+  if (source === EVENT_REG_SOURCES.STAFF) return "badge--source-staff";
   return "badge--source-spot";
 }
 
@@ -118,6 +160,7 @@ function sourceLabel(source) {
   if (source === EVENT_REG_SOURCES.GOOGLE_FORM) return "Google Form";
   if (source === EVENT_REG_SOURCES.ALUMNI_CONNECT) return "Alumni Connect";
   if (source === EVENT_REG_SOURCES.SPOT) return "Spot";
+  if (source === EVENT_REG_SOURCES.STAFF) return "Former staff";
   return source || "—";
 }
 
@@ -134,8 +177,8 @@ function searchHaystack(row) {
     row.batch,
     row.department,
     row.departmentLabel,
-    row.notes,
-    row.willingness,
+    row.staffRole,
+    row.yearsServed,
     row.registrationStatus,
     row.notes,
     row.whatsapp,
@@ -260,6 +303,10 @@ function foodIssuedTotal(rows) {
   return (rows || []).reduce((n, r) => n + foodCouponCountOf(r), 0);
 }
 
+function hillviewCount(rows) {
+  return (rows || []).filter((r) => r.hillviewTrip).length;
+}
+
 function normalizeFoodCouponCount(value, { issued = false, membersAttending = 1 } = {}) {
   if (!issued) return 0;
   const n = Math.floor(Number(value));
@@ -298,11 +345,39 @@ function wireFoodCouponControls(prefix) {
   sync();
 }
 
-function enrollmentFormHtml(prefix, record = {}, { lockedIdentity = false, foodIssuedTotal: issuedTotal = 0 } = {}) {
-  const r = record || {};
+function issueRowHtml(prefix, r = {}, { foodIssuedTotal: issuedTotal = 0, hillviewTotal = 0 } = {}) {
   const couponValue = r.foodCouponIssued
     ? foodCouponCountOf(r) || partySizeOf(r)
     : 0;
+  return `
+    <div class="er-issue-row">
+      <div class="er-issue-food">
+        <label class="checkbox-label">
+          <input type="checkbox" id="${prefix}Food" ${r.foodCouponIssued ? "checked" : ""}>
+          Food coupon issued
+        </label>
+        <label class="er-food-count" for="${prefix}FoodCount">
+          Coupons
+          <input type="number" id="${prefix}FoodCount" min="0" max="${MAX_MEMBERS_ATTENDING}" value="${escapeHtml(String(couponValue))}">
+        </label>
+        <span class="form-hint er-food-total">Desk total issued: <strong>${issuedTotal}</strong></span>
+      </div>
+      <label class="checkbox-label">
+        <input type="checkbox" id="${prefix}Souvenir" ${r.souvenirIssued ? "checked" : ""}>
+        Souvenir issued
+      </label>
+      <div class="er-issue-food">
+        <label class="checkbox-label">
+          <input type="checkbox" id="${prefix}Hillview" ${r.hillviewTrip ? "checked" : ""}>
+          Joining Hillview trip
+        </label>
+        <span class="form-hint er-hillview-total">Joining: <strong>${hillviewTotal}</strong></span>
+      </div>
+    </div>`;
+}
+
+function enrollmentFormHtml(prefix, record = {}, { lockedIdentity = false, foodIssuedTotal: issuedTotal = 0, hillviewTotal = 0 } = {}) {
+  const r = record || {};
   const accompanying = accompanyingOf(r);
   return `
     <div class="form-row">
@@ -355,23 +430,59 @@ function enrollmentFormHtml(prefix, record = {}, { lockedIdentity = false, foodI
       <label for="${prefix}JobRole">Job Role</label>
       <input type="text" id="${prefix}JobRole" value="${escapeHtml(r.jobRole || "")}" placeholder="Designation / role">
     </div>
-    <div class="er-issue-row">
-      <div class="er-issue-food">
-        <label class="checkbox-label">
-          <input type="checkbox" id="${prefix}Food" ${r.foodCouponIssued ? "checked" : ""}>
-          Food coupon issued
-        </label>
-        <label class="er-food-count" for="${prefix}FoodCount">
-          Coupons
-          <input type="number" id="${prefix}FoodCount" min="0" max="${MAX_MEMBERS_ATTENDING}" value="${escapeHtml(String(couponValue))}">
-        </label>
-        <span class="form-hint er-food-total">Desk total issued: <strong>${issuedTotal}</strong></span>
+    ${issueRowHtml(prefix, r, { foodIssuedTotal: issuedTotal, hillviewTotal })}`;
+}
+
+function staffFormHtml(prefix, record = {}, { foodIssuedTotal: issuedTotal = 0, hillviewTotal = 0 } = {}) {
+  const r = record || {};
+  const accompanying = accompanyingOf(r);
+  const deptValue = r.department === EVENT_DESK_STAFF_DEPT ? "" : r.department || "";
+  return `
+    <div class="form-row">
+      <div class="form-group">
+        <label for="${prefix}Name">Full name <span class="required">*</span></label>
+        <input type="text" id="${prefix}Name" required value="${escapeHtml(r.alumniName || "")}" placeholder="Full name">
       </div>
-      <label class="checkbox-label">
-        <input type="checkbox" id="${prefix}Souvenir" ${r.souvenirIssued ? "checked" : ""}>
-        Souvenir issued
-      </label>
-    </div>`;
+      <div class="form-group">
+        <label for="${prefix}StaffRole">Role at GECI <span class="required">*</span></label>
+        <select id="${prefix}StaffRole" required>
+          ${staffRoleOptionsHtml(r.staffRole || "")}
+        </select>
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label for="${prefix}Department">Department they served in</label>
+        <select id="${prefix}Department">
+          ${staffDepartmentOptionsHtml(deptValue)}
+        </select>
+      </div>
+      <div class="form-group">
+        <label for="${prefix}Years">Years at GECI</label>
+        <input type="text" id="${prefix}Years" value="${escapeHtml(r.yearsServed || "")}" placeholder="e.g. 1998–2012">
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label for="${prefix}Mobile">Mobile Number <span class="required">*</span></label>
+        <input type="tel" id="${prefix}Mobile" required value="${escapeHtml(r.mobile || r.whatsapp || "")}" placeholder="10–15 digits">
+      </div>
+      <div class="form-group">
+        <label for="${prefix}Email">Email</label>
+        <input type="email" id="${prefix}Email" value="${escapeHtml(r.email || "")}" placeholder="optional">
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label for="${prefix}Members">Accompanying family</label>
+        <input type="number" id="${prefix}Members" min="0" max="${MAX_MEMBERS_ATTENDING - 1}" value="${escapeHtml(String(accompanying))}">
+      </div>
+      <div class="form-group">
+        <label for="${prefix}Notes">Notes</label>
+        <input type="text" id="${prefix}Notes" value="${escapeHtml(r.notes || "")}" placeholder="Optional">
+      </div>
+    </div>
+    ${issueRowHtml(prefix, r, { foodIssuedTotal: issuedTotal, hillviewTotal })}`;
 }
 
 function readEnrollmentForm(prefix, { departmentLocked } = {}) {
@@ -396,6 +507,7 @@ function readEnrollmentForm(prefix, { departmentLocked } = {}) {
     { issued: foodCouponIssued, membersAttending }
   );
   const souvenirIssued = !!document.getElementById(`${prefix}Souvenir`)?.checked;
+  const hillviewTrip = !!document.getElementById(`${prefix}Hillview`)?.checked;
 
   const errors = [];
   if (!alumniName) errors.push("Alumni name is required.");
@@ -423,11 +535,76 @@ function readEnrollmentForm(prefix, { departmentLocked } = {}) {
       foodCouponIssued,
       foodCouponCount,
       souvenirIssued,
+      hillviewTrip,
+      guestKind: "alumni",
     },
   };
 }
 
-function findExistingCheckIn(enrollments, candidate) {
+function staffDepartmentForSave(selected, session) {
+  const code = String(selected || "").trim();
+  if (DEPARTMENTS.some((d) => d.value === code)) return code;
+  if (session?.role === ROLES.FACULTY && session.department) return session.department;
+  return EVENT_DESK_STAFF_DEPT;
+}
+
+function readStaffForm(prefix, session) {
+  const alumniName = document.getElementById(`${prefix}Name`)?.value.trim() || "";
+  const staffRole = document.getElementById(`${prefix}StaffRole`)?.value || "";
+  const selectedDept = document.getElementById(`${prefix}Department`)?.value || "";
+  const department = staffDepartmentForSave(selectedDept, session);
+  const yearsServed = document.getElementById(`${prefix}Years`)?.value.trim() || "";
+  const email = document.getElementById(`${prefix}Email`)?.value.trim() || "";
+  const mobile = (document.getElementById(`${prefix}Mobile`)?.value || "").replace(/[\s\-]/g, "");
+  const notes = document.getElementById(`${prefix}Notes`)?.value.trim() || "";
+  const familyAccompanying = normalizeAccompanyingFamily(
+    document.getElementById(`${prefix}Members`)?.value
+  );
+  const membersAttending = partySizeFromAccompanying(familyAccompanying);
+  const foodCouponIssued = !!document.getElementById(`${prefix}Food`)?.checked;
+  const foodCouponCount = normalizeFoodCouponCount(
+    document.getElementById(`${prefix}FoodCount`)?.value,
+    { issued: foodCouponIssued, membersAttending }
+  );
+  const souvenirIssued = !!document.getElementById(`${prefix}Souvenir`)?.checked;
+  const hillviewTrip = !!document.getElementById(`${prefix}Hillview`)?.checked;
+  const roleLabel = staffRoleLabel(staffRole);
+
+  const errors = [];
+  if (!alumniName) errors.push("Name is required.");
+  if (!staffRole) errors.push("Role at GECI is required.");
+  if (!mobile) errors.push("Mobile number is required.");
+  if (mobile && !/^\d{10,15}$/.test(mobile)) errors.push("Mobile must be 10–15 digits.");
+  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) errors.push("Email looks invalid.");
+
+  return {
+    errors,
+    data: {
+      alumniName,
+      department,
+      batch: "",
+      email,
+      mobile,
+      whatsapp: mobile,
+      address: "",
+      company: yearsServed ? `GECI · ${yearsServed}` : "GECI",
+      jobSector: "",
+      jobRole: roleLabel,
+      staffRole,
+      yearsServed,
+      notes,
+      guestKind: "staff",
+      membersAttending,
+      familyAccompanying,
+      foodCouponIssued,
+      foodCouponCount,
+      souvenirIssued,
+      hillviewTrip,
+    },
+  };
+}
+
+function findExistingCheckIn(enrollments, candidate, { staff = null } = {}) {
   const phone = normalizePhoneDigits(candidate.mobile || candidate.whatsapp);
   const email = String(candidate.email || "")
     .toLowerCase()
@@ -435,6 +612,8 @@ function findExistingCheckIn(enrollments, candidate) {
   const name = normalizePersonName(candidate.alumniName);
   return enrollments.find((r) => {
     if (isEventDeskTestRecord(r)) return false;
+    if (staff === true && !isStaffCheckIn(r)) return false;
+    if (staff === false && isStaffCheckIn(r)) return false;
     const rPhone = normalizePhoneDigits(r.mobile || r.whatsapp);
     const rEmail = String(r.email || "")
       .toLowerCase()
@@ -446,7 +625,7 @@ function findExistingCheckIn(enrollments, candidate) {
   });
 }
 
-function findTestCheckIn(enrollments, candidate) {
+function findTestCheckIn(enrollments, candidate, { staff = null } = {}) {
   const phone = normalizePhoneDigits(candidate.mobile || candidate.whatsapp);
   const email = String(candidate.email || "")
     .toLowerCase()
@@ -454,6 +633,8 @@ function findTestCheckIn(enrollments, candidate) {
   const name = normalizePersonName(candidate.alumniName);
   return enrollments.find((r) => {
     if (!isEventDeskTestRecord(r)) return false;
+    if (staff === true && !isStaffCheckIn(r)) return false;
+    if (staff === false && isStaffCheckIn(r)) return false;
     const rPhone = normalizePhoneDigits(r.mobile || r.whatsapp);
     const rEmail = String(r.email || "")
       .toLowerCase()
@@ -593,7 +774,9 @@ function lookupCardHtml(item) {
 function checkInRowHtml(row, { canEdit = true } = {}) {
   return `
     <tr>
-      <td><strong>${escapeHtml(row.alumniName || "—")}</strong><br><small style="color:var(--slate-500)">${escapeHtml(sourceLabel(row.source))}</small></td>
+      <td><strong>${escapeHtml(row.alumniName || "—")}</strong><br><small style="color:var(--slate-500)">${escapeHtml(sourceLabel(row.source))}${
+        isStaffCheckIn(row) && row.staffRole ? ` · ${escapeHtml(staffRoleLabel(row.staffRole))}` : ""
+      }</small></td>
       <td>${escapeHtml(departmentLabel(row.department))}${row.batch ? `<br><small>${escapeHtml(row.batch)}</small>` : ""}</td>
       <td>${escapeHtml(row.mobile || row.whatsapp || "—")}<br><small style="color:var(--slate-500)">${escapeHtml(row.email || "")}</small></td>
       <td>${partySizeOf(row)}${accompanyingOf(row) ? `<br><small>${accompanyingOf(row)} family</small>` : ""}</td>
@@ -602,8 +785,9 @@ function checkInRowHtml(row, { canEdit = true } = {}) {
           canEdit
             ? `<label class="checkbox-label"><input type="checkbox" data-er-food="${escapeHtml(row.id)}" ${row.foodCouponIssued ? "checked" : ""}> Food</label>
                <input type="number" class="er-food-count-input" min="0" max="${MAX_MEMBERS_ATTENDING}" data-er-food-count="${escapeHtml(row.id)}" value="${escapeHtml(String(foodCouponCountOf(row)))}" ${row.foodCouponIssued ? "" : "disabled"} aria-label="Food coupons">
-               <label class="checkbox-label"><input type="checkbox" data-er-souvenir="${escapeHtml(row.id)}" ${row.souvenirIssued ? "checked" : ""}> Souvenir</label>`
-            : `${row.foodCouponIssued ? `Food ×${foodCouponCountOf(row)}` : "—"} / ${row.souvenirIssued ? "Souvenir" : "—"}`
+               <label class="checkbox-label"><input type="checkbox" data-er-souvenir="${escapeHtml(row.id)}" ${row.souvenirIssued ? "checked" : ""}> Souvenir</label>
+               <label class="checkbox-label"><input type="checkbox" data-er-hillview="${escapeHtml(row.id)}" ${row.hillviewTrip ? "checked" : ""}> Hillview</label>`
+            : `${row.foodCouponIssued ? `Food ×${foodCouponCountOf(row)}` : "—"} / ${row.souvenirIssued ? "Souvenir" : "—"} / ${row.hillviewTrip ? "Hillview" : "—"}`
         }
       </td>
     </tr>`;
@@ -639,8 +823,8 @@ function buildLookupList(preRegs, contacts, enrollments, query) {
   const merged = [...fromForm, ...fromConnect]
     .map((item) => ({
       ...item,
-      alreadyCheckedIn: !!findExistingCheckIn(enrolled, item),
-      existing: findExistingCheckIn(enrolled, item),
+      alreadyCheckedIn: !!findExistingCheckIn(enrolled, item, { staff: false }),
+      existing: findExistingCheckIn(enrolled, item, { staff: false }),
     }))
     .filter((item) => matchesSearch(item, query))
     .sort((a, b) => {
@@ -667,8 +851,34 @@ async function persistCheckIn({ session, task, source, sourceId, formPrefix, exi
     volunteerDepartment: session.department || "",
     isTest: false,
   };
-  const live = existing?.id && !isEventDeskTestRecord(existing) ? existing : findExistingCheckIn(enrollments || [], parsed.data);
-  const testHit = findTestCheckIn(enrollments || [], parsed.data);
+  const live = existing?.id && !isEventDeskTestRecord(existing) ? existing : findExistingCheckIn(enrollments || [], parsed.data, { staff: false });
+  const testHit = findTestCheckIn(enrollments || [], parsed.data, { staff: false });
+  const row = live || testHit;
+  if (row?.id) {
+    payload.id = row.id;
+  } else {
+    payload.createdByUserId = normalizeUsername(session.username);
+    payload.createdByName = session.displayName || session.username;
+  }
+  return saveCheckIn(payload);
+}
+
+async function persistStaffCheckIn({ session, task, enrollments }) {
+  const parsed = readStaffForm("erStaff", session);
+  if (parsed.errors.length) {
+    throw new Error(parsed.errors[0]);
+  }
+  const payload = {
+    ...parsed.data,
+    source: EVENT_REG_SOURCES.STAFF,
+    sourceId: "",
+    deptTaskId: task?.id || "",
+    taskTitle: task?.title || "Event Registration",
+    volunteerDepartment: session.department || "",
+    isTest: false,
+  };
+  const live = findExistingCheckIn(enrollments || [], parsed.data, { staff: true });
+  const testHit = findTestCheckIn(enrollments || [], parsed.data, { staff: true });
   const row = live || testHit;
   if (row?.id) {
     payload.id = row.id;
@@ -754,12 +964,14 @@ export async function mountEventDesk(wrap, { session, notify, mode = "volunteer"
             : `<p class="form-hint" style="margin:0 0 0.75rem;">
                 Search Google Form + Alumni Connect records, then issue food coupon / souvenir.
                 Spot registration is for alumni who are not already in those lists.
+                Use <strong>Former staff</strong> for past teachers, principals, lab and office staff.
               </p>`
         }
 
         <div class="acct-tabs" role="tablist">
           <button type="button" class="acct-tab ${state.tab === "search" ? "acct-tab--active" : ""}" data-er-tab="search">Already registered</button>
           <button type="button" class="acct-tab ${state.tab === "spot" ? "acct-tab--active" : ""}" data-er-tab="spot">Spot registration</button>
+          <button type="button" class="acct-tab ${state.tab === "staff" ? "acct-tab--active" : ""}" data-er-tab="staff">Former staff</button>
         </div>
 
         <div class="er-panel" ${state.tab === "search" ? "" : "hidden"}>
@@ -787,7 +999,7 @@ export async function mountEventDesk(wrap, { session, notify, mode = "volunteer"
         <div class="er-panel" ${state.tab === "spot" ? "" : "hidden"}>
           <h3 class="er-subtitle">New walk-in alumni</h3>
           <form id="erSpotForm">
-            <div id="erSpotFields">${enrollmentFormHtml("erSpot", {}, { foodIssuedTotal: foodIssuedTotal(liveEnrollments) })}</div>
+            <div id="erSpotFields">${enrollmentFormHtml("erSpot", {}, { foodIssuedTotal: foodIssuedTotal(liveEnrollments), hillviewTotal: hillviewCount(liveEnrollments) })}</div>
             <div style="margin-top:1rem;">
               <button type="submit" class="btn btn--primary" ${canSave ? "" : "disabled"}>Save spot registration</button>
               ${canSave ? "" : `<p class="form-hint">Assigned Event Registration volunteers can save check-ins.</p>`}
@@ -795,13 +1007,25 @@ export async function mountEventDesk(wrap, { session, notify, mode = "volunteer"
           </form>
         </div>
 
+        <div class="er-panel" ${state.tab === "staff" ? "" : "hidden"}>
+          <h3 class="er-subtitle">Past teachers, principal &amp; staff</h3>
+          <p class="form-hint">For people who served at GECI and are not alumni. Same food coupon, souvenir, and Hillview options as alumni.</p>
+          <form id="erStaffForm">
+            <div id="erStaffFields">${staffFormHtml("erStaff", {}, { foodIssuedTotal: foodIssuedTotal(liveEnrollments), hillviewTotal: hillviewCount(liveEnrollments) })}</div>
+            <div style="margin-top:1rem;">
+              <button type="submit" class="btn btn--primary" ${canSave ? "" : "disabled"}>Save staff registration</button>
+              ${canSave ? "" : `<p class="form-hint">Assigned Event Registration volunteers can save check-ins.</p>`}
+            </div>
+          </form>
+        </div>
+
         <div class="er-today">
           <h3 class="er-subtitle">Desk registrations ${deptFilter ? `(${escapeHtml(departmentLabel(deptFilter))})` : ""}</h3>
-          <p class="form-hint">${liveEnrollments.length} checked in · Food ${foodIssuedTotal(liveEnrollments)} · Souvenir ${liveEnrollments.filter((r) => r.souvenirIssued).length}</p>
+          <p class="form-hint">${liveEnrollments.length} checked in · Food ${foodIssuedTotal(liveEnrollments)} · Souvenir ${liveEnrollments.filter((r) => r.souvenirIssued).length} · Hillview ${hillviewCount(liveEnrollments)}</p>
           ${
             liveEnrollments.length
               ? `<div class="table-scroll"><table class="data-table">
-                  <thead><tr><th>Alumni</th><th>Dept</th><th>Contact</th><th>People</th><th>Issued</th></tr></thead>
+                  <thead><tr><th>Name</th><th>Dept</th><th>Contact</th><th>People</th><th>Issued</th></tr></thead>
                   <tbody>${liveEnrollments.map((r) => checkInRowHtml(r, { canEdit: canSave })).join("")}</tbody>
                 </table></div>`
               : `<p class="empty-state">No desk registrations yet.</p>`
@@ -811,6 +1035,7 @@ export async function mountEventDesk(wrap, { session, notify, mode = "volunteer"
 
     bind();
     wireFoodCouponControls("erSpot");
+    wireFoodCouponControls("erStaff");
     if (state.selected) fillSelectedForm();
   }
 
@@ -833,10 +1058,12 @@ export async function mountEventDesk(wrap, { session, notify, mode = "volunteer"
           foodCouponIssued: false,
           foodCouponCount: 0,
           souvenirIssued: false,
+          hillviewTrip: false,
         };
     fields.innerHTML = enrollmentFormHtml("erPre", seed, {
       lockedIdentity: false,
       foodIssuedTotal: foodIssuedTotal((state.enrollments || []).filter((r) => !isEventDeskTestRecord(r))),
+      hillviewTotal: hillviewCount((state.enrollments || []).filter((r) => !isEventDeskTestRecord(r))),
     });
     wireFoodCouponControls("erPre");
   }
@@ -901,7 +1128,7 @@ export async function mountEventDesk(wrap, { session, notify, mode = "volunteer"
       try {
         const parsed = readEnrollmentForm("erSpot");
         if (parsed.errors.length) throw new Error(parsed.errors[0]);
-        const existing = findExistingCheckIn(state.enrollments, parsed.data);
+        const existing = findExistingCheckIn(state.enrollments, parsed.data, { staff: false });
         await persistCheckIn({
           session,
           task: state.task,
@@ -921,6 +1148,27 @@ export async function mountEventDesk(wrap, { session, notify, mode = "volunteer"
       }
     });
 
+    wrap.querySelector("#erStaffForm")?.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      try {
+        const parsed = readStaffForm("erStaff", session);
+        if (parsed.errors.length) throw new Error(parsed.errors[0]);
+        const existing = findExistingCheckIn(state.enrollments, parsed.data, { staff: true });
+        await persistStaffCheckIn({
+          session,
+          task: state.task,
+          enrollments: state.enrollments,
+        });
+        toast(existing ? "Updated existing check-in." : "Staff registration saved.", "success");
+        await refreshLists();
+        state.tab = "staff";
+        render();
+      } catch (err) {
+        console.error(err);
+        toast(err.message || "Could not save staff registration.", "error");
+      }
+    });
+
     wrap.querySelector("#erExcel")?.addEventListener("change", async (e) => {
       const file = e.target.files?.[0];
       if (!file) return;
@@ -936,13 +1184,14 @@ export async function mountEventDesk(wrap, { session, notify, mode = "volunteer"
       }
     });
 
-    wrap.querySelectorAll("[data-er-food], [data-er-souvenir], [data-er-food-count]").forEach((input) => {
+    wrap.querySelectorAll("[data-er-food], [data-er-souvenir], [data-er-hillview], [data-er-food-count]").forEach((input) => {
       input.addEventListener("change", async () => {
-        const id = input.dataset.erFood || input.dataset.erSouvenir || input.dataset.erFoodCount;
+        const id = input.dataset.erFood || input.dataset.erSouvenir || input.dataset.erHillview || input.dataset.erFoodCount;
         const row = state.enrollments.find((r) => r.id === id);
         if (!row) return;
         const foodEl = wrap.querySelector(`[data-er-food="${id}"]`);
         const souvenirEl = wrap.querySelector(`[data-er-souvenir="${id}"]`);
+        const hillviewEl = wrap.querySelector(`[data-er-hillview="${id}"]`);
         const countEl = wrap.querySelector(`[data-er-food-count="${id}"]`);
         const issued = !!foodEl?.checked;
         const foodCouponCount = normalizeFoodCouponCount(countEl?.value, {
@@ -963,24 +1212,29 @@ export async function mountEventDesk(wrap, { session, notify, mode = "volunteer"
               foodCouponIssued: issued,
               foodCouponCount,
               souvenirIssued: !!souvenirEl?.checked,
+              hillviewTrip: !!hillviewEl?.checked,
               updatedAt: serverTimestamp(),
             })
           );
           row.foodCouponIssued = issued;
           row.foodCouponCount = foodCouponCount;
           row.souvenirIssued = !!souvenirEl?.checked;
+          row.hillviewTrip = !!hillviewEl?.checked;
           const live = (state.enrollments || []).filter((r) => !isEventDeskTestRecord(r));
           const total = foodIssuedTotal(live);
           const hint = wrap.querySelector(".er-today > .form-hint");
           if (hint) {
-            hint.textContent = `${live.length} checked in · Food ${total} · Souvenir ${live.filter((r) => r.souvenirIssued).length}`;
+            hint.textContent = `${live.length} checked in · Food ${total} · Souvenir ${live.filter((r) => r.souvenirIssued).length} · Hillview ${hillviewCount(live)}`;
           }
           wrap.querySelectorAll(".er-food-total strong").forEach((el) => {
             el.textContent = String(total);
           });
+          wrap.querySelectorAll(".er-hillview-total strong").forEach((el) => {
+            el.textContent = String(hillviewCount(live));
+          });
         } catch (err) {
           console.error(err);
-          toast("Could not update coupon / souvenir.", "error");
+          toast("Could not update coupon / souvenir / trip.", "error");
           if (input.type === "checkbox") input.checked = !input.checked;
         }
       });
@@ -1015,46 +1269,49 @@ function countBy(list, fn) {
 }
 
 export function summarizeEventDesk({ preRegs = [], contacts = [], enrollments = [] } = {}) {
-  const testCount = (enrollments || []).filter(isEventDeskTestRecord).length;
+  const testRows = (enrollments || []).filter(isEventDeskTestRecord);
+  const testCount = testRows.length;
+  const testStaffCount = testRows.filter(isStaffCheckIn).length;
   enrollments = (enrollments || []).filter((r) => !isEventDeskTestRecord(r));
   const people = enrollments.reduce((n, r) => n + partySizeOf(r), 0);
   const foodCheckIns = enrollments.filter((r) => r.foodCouponIssued).length;
   const food = foodIssuedTotal(enrollments);
   const souvenir = enrollments.filter((r) => r.souvenirIssued).length;
+  const hillview = hillviewCount(enrollments);
   const bySource = {
     google_form: enrollments.filter((r) => r.source === EVENT_REG_SOURCES.GOOGLE_FORM).length,
     alumni_connect: enrollments.filter((r) => r.source === EVENT_REG_SOURCES.ALUMNI_CONNECT).length,
     spot: enrollments.filter((r) => r.source === EVENT_REG_SOURCES.SPOT).length,
+    staff: enrollments.filter(isStaffCheckIn).length,
   };
-  const pendingForm = preRegs.filter((r) => !findExistingCheckIn(enrollments, r)).length;
+  const pendingForm = preRegs.filter((r) => !findExistingCheckIn(enrollments, r, { staff: false })).length;
 
-  const deptRows = DEPARTMENTS.map((d) => {
-    const rows = enrollments.filter((r) => r.department === d.value);
+  function deptStats(rows, code, label) {
     return {
-      code: d.value,
-      label: d.label,
+      code,
+      label,
       checkIns: rows.length,
       people: rows.reduce((n, r) => n + partySizeOf(r), 0),
       food: foodIssuedTotal(rows),
       souvenir: rows.filter((r) => r.souvenirIssued).length,
+      hillview: hillviewCount(rows),
       spot: rows.filter((r) => r.source === EVENT_REG_SOURCES.SPOT).length,
       form: rows.filter((r) => r.source === EVENT_REG_SOURCES.GOOGLE_FORM).length,
       connect: rows.filter((r) => r.source === EVENT_REG_SOURCES.ALUMNI_CONNECT).length,
+      staff: rows.filter(isStaffCheckIn).length,
     };
-  });
-  const other = enrollments.filter((r) => !DEPARTMENTS.some((d) => d.value === r.department));
+  }
+
+  const deptRows = DEPARTMENTS.map((d) => deptStats(enrollments.filter((r) => r.department === d.value), d.value, d.label));
+  const collegeStaff = enrollments.filter((r) => r.department === EVENT_DESK_STAFF_DEPT);
+  if (collegeStaff.length) {
+    deptRows.push(deptStats(collegeStaff, EVENT_DESK_STAFF_DEPT, "College staff"));
+  }
+  const other = enrollments.filter(
+    (r) => r.department !== EVENT_DESK_STAFF_DEPT && !DEPARTMENTS.some((d) => d.value === r.department)
+  );
   if (other.length) {
-    deptRows.push({
-      code: "OTHER",
-      label: "Other / unset",
-      checkIns: other.length,
-      people: other.reduce((n, r) => n + partySizeOf(r), 0),
-      food: foodIssuedTotal(other),
-      souvenir: other.filter((r) => r.souvenirIssued).length,
-      spot: other.filter((r) => r.source === EVENT_REG_SOURCES.SPOT).length,
-      form: other.filter((r) => r.source === EVENT_REG_SOURCES.GOOGLE_FORM).length,
-      connect: other.filter((r) => r.source === EVENT_REG_SOURCES.ALUMNI_CONNECT).length,
-    });
+    deptRows.push(deptStats(other, "OTHER", "Other / unset"));
   }
 
   return {
@@ -1064,16 +1321,298 @@ export function summarizeEventDesk({ preRegs = [], contacts = [], enrollments = 
     people,
     food,
     souvenir,
+    hillview,
     foodPending: Math.max(0, enrollments.length - foodCheckIns),
     souvenirPending: Math.max(0, enrollments.length - souvenir),
+    hillviewPending: Math.max(0, enrollments.length - hillview),
     pendingForm,
     arrivedForm: preRegs.length - pendingForm,
     bySource,
     deptRows,
-    batches: countBy(enrollments, (r) => r.batch || "—"),
+    batches: countBy(
+      enrollments.filter((r) => !isStaffCheckIn(r)),
+      (r) => r.batch || "—"
+    ),
     volunteers: countBy(enrollments, (r) => r.createdByName || r.createdByUserId || "—"),
     testCount,
+    testStaffCount,
   };
+}
+
+const ER_CHART_COLORS = {
+  form: "#2563eb",
+  connect: "#6b2d7b",
+  spot: "#ea580c",
+  issued: "#16a34a",
+  pending: "#e2e8f0",
+  hillview: "#0f766e",
+  checkIn: "#6b2d7b",
+  people: "#0d9488",
+  year: "#8b3fa0",
+  staff: "#0f766e",
+  arrived: "#16a34a",
+  waiting: "#d97706",
+};
+
+function erChartPolar(cx, cy, r, angleDeg) {
+  const rad = ((angleDeg - 90) * Math.PI) / 180;
+  return {
+    x: +(cx + r * Math.cos(rad)).toFixed(3),
+    y: +(cy + r * Math.sin(rad)).toFixed(3),
+  };
+}
+
+function erDonutSlicePath(cx, cy, rOuter, rInner, start, end) {
+  const sweep = end - start;
+  if (sweep <= 0.01) return "";
+  if (sweep >= 359.99) {
+    return [
+      `M ${cx} ${cy - rOuter}`,
+      `A ${rOuter} ${rOuter} 0 1 1 ${cx} ${cy + rOuter}`,
+      `A ${rOuter} ${rOuter} 0 1 1 ${cx} ${cy - rOuter}`,
+      `M ${cx} ${cy - rInner}`,
+      `A ${rInner} ${rInner} 0 1 0 ${cx} ${cy + rInner}`,
+      `A ${rInner} ${rInner} 0 1 0 ${cx} ${cy - rInner}`,
+    ].join(" ");
+  }
+  const large = sweep > 180 ? 1 : 0;
+  const p1 = erChartPolar(cx, cy, rOuter, start);
+  const p2 = erChartPolar(cx, cy, rOuter, end);
+  const p3 = erChartPolar(cx, cy, rInner, end);
+  const p4 = erChartPolar(cx, cy, rInner, start);
+  return `M ${p1.x} ${p1.y} A ${rOuter} ${rOuter} 0 ${large} 1 ${p2.x} ${p2.y} L ${p3.x} ${p3.y} A ${rInner} ${rInner} 0 ${large} 0 ${p4.x} ${p4.y} Z`;
+}
+
+function erDonutHtml(slices, { title, caption, centerValue, centerLabel }) {
+  const items = (slices || []).filter((s) => Number(s.value) > 0);
+  const total = items.reduce((n, s) => n + Number(s.value || 0), 0);
+  const cx = 80;
+  const cy = 80;
+  const rOuter = 70;
+  const rInner = 44;
+  const paths = [];
+  if (total > 0) {
+    let angle = 0;
+    items.forEach((s, i) => {
+      const sweep = (Number(s.value) / total) * 360;
+      const end = i === items.length - 1 ? 360 : angle + sweep;
+      const d = erDonutSlicePath(cx, cy, rOuter, rInner, angle, end);
+      if (d) {
+        paths.push(`<path d="${d}" fill="${s.color}" fill-rule="evenodd"></path>`);
+      }
+      angle = end;
+    });
+  } else {
+    paths.push(
+      `<path d="${erDonutSlicePath(cx, cy, rOuter, rInner, 0, 360)}" fill="${ER_CHART_COLORS.pending}" fill-rule="evenodd"></path>`
+    );
+  }
+  const legend = (slices || [])
+    .map(
+      (s) => `
+        <li>
+          <span class="er-chart__swatch" style="background:${s.color}"></span>
+          <span>${escapeHtml(s.label)}</span>
+          <strong>${Number(s.value || 0)}</strong>
+        </li>`
+    )
+    .join("");
+  return `
+    <figure class="er-chart">
+      <figcaption class="er-chart__title">${escapeHtml(title)}</figcaption>
+      <div class="er-donut-wrap">
+        <div class="er-donut" role="img" aria-label="${escapeHtml(`${title}: ${centerValue ?? total} ${centerLabel || ""}`)}">
+          <svg viewBox="0 0 160 160" aria-hidden="true">${paths.join("")}</svg>
+          <div class="er-donut__center">
+            <strong>${escapeHtml(String(centerValue ?? total))}</strong>
+            <span>${escapeHtml(centerLabel || "")}</span>
+          </div>
+        </div>
+        <ul class="er-chart__legend">${legend}</ul>
+      </div>
+      ${caption ? `<p class="er-chart__caption">${escapeHtml(caption)}</p>` : ""}
+    </figure>`;
+}
+
+function erStackBarsHtml(rows, { title, caption }) {
+  const body = (rows || [])
+    .map((row) => {
+      const total = row.segments.reduce((n, s) => n + Number(s.value || 0), 0);
+      const segs =
+        total > 0
+          ? row.segments
+              .filter((s) => Number(s.value) > 0)
+              .map((s) => {
+                const pct = Math.max(0, (Number(s.value) / total) * 100);
+                return `<span class="er-stack__seg" style="width:${pct}%;background:${s.color}" title="${escapeHtml(s.label)}: ${s.value}"></span>`;
+              })
+              .join("")
+          : `<span class="er-stack__seg er-stack__seg--empty"></span>`;
+      return `
+        <div class="er-stack">
+          <div class="er-stack__head">
+            <span>${escapeHtml(row.label)}</span>
+            <span>${escapeHtml(row.summary)}</span>
+          </div>
+          <div class="er-stack__track" role="img" aria-label="${escapeHtml(`${row.label} ${row.summary}`)}">${segs}</div>
+        </div>`;
+    })
+    .join("");
+  return `
+    <figure class="er-chart er-chart--wide">
+      <figcaption class="er-chart__title">${escapeHtml(title)}</figcaption>
+      ${body}
+      ${caption ? `<p class="er-chart__caption">${escapeHtml(caption)}</p>` : ""}
+    </figure>`;
+}
+
+function erDeptBarsHtml(deptRows) {
+  const rows = (deptRows || []).filter((r) => r.checkIns);
+  if (!rows.length) return "";
+  const max = Math.max(1, ...rows.map((r) => Math.max(r.checkIns, r.people)));
+  const body = rows
+    .map((r) => {
+      const checkPct = Math.max(r.checkIns ? 4 : 0, (r.checkIns / max) * 100);
+      const peoplePct = Math.max(r.people ? 4 : 0, (r.people / max) * 100);
+      return `
+        <div class="er-dept-bar">
+          <div class="er-dept-bar__code" title="${escapeHtml(r.label)}">${escapeHtml(r.code || r.label)}</div>
+          <div class="er-dept-bar__rows">
+            <div class="er-dept-bar__row">
+              <div class="er-dept-bar__track">
+                <span class="er-dept-bar__fill" style="width:${checkPct}%;background:${ER_CHART_COLORS.checkIn}"></span>
+              </div>
+              <span>${r.checkIns}</span>
+            </div>
+            <div class="er-dept-bar__row">
+              <div class="er-dept-bar__track">
+                <span class="er-dept-bar__fill" style="width:${peoplePct}%;background:${ER_CHART_COLORS.people}"></span>
+              </div>
+              <span>${r.people}</span>
+            </div>
+          </div>
+        </div>`;
+    })
+    .join("");
+  return `
+    <figure class="er-chart er-chart--wide">
+      <figcaption class="er-chart__title">Check-ins and people by department</figcaption>
+      <ul class="er-chart__legend er-chart__legend--row">
+        <li><span class="er-chart__swatch" style="background:${ER_CHART_COLORS.checkIn}"></span> Check-ins</li>
+        <li><span class="er-chart__swatch" style="background:${ER_CHART_COLORS.people}"></span> People on campus</li>
+      </ul>
+      ${body}
+      <p class="er-chart__caption">Bar length is relative to the largest department total. Test check-ins are excluded.</p>
+    </figure>`;
+}
+
+function erYearColumnsHtml(batches) {
+  const known = (batches || [])
+    .filter(([year]) => year && year !== "—")
+    .sort((a, b) => String(a[0]).localeCompare(String(b[0])));
+  const unknown = (batches || []).find(([year]) => year === "—");
+  const items = unknown ? [...known, ["n/a", unknown[1]]] : known;
+  if (!items.length) return "";
+  const max = Math.max(1, ...items.map(([, n]) => n));
+  const cols = items
+    .map(([year, n]) => {
+      const h = Math.max(8, Math.round((n / max) * 120));
+      return `
+        <div class="er-col" title="${escapeHtml(String(year))}: ${n}">
+          <span class="er-col__value">${n}</span>
+          <span class="er-col__bar" style="height:${h}px;background:${ER_CHART_COLORS.year}"></span>
+          <span class="er-col__label">${escapeHtml(String(year))}</span>
+        </div>`;
+    })
+    .join("");
+  return `
+    <figure class="er-chart er-chart--wide">
+      <figcaption class="er-chart__title">Check-ins by passout year</figcaption>
+      <div class="er-cols" role="img" aria-label="Check-ins by passout year">${cols}</div>
+    </figure>`;
+}
+
+function erChartsHtml(stats) {
+  const parts = [];
+  if (stats.checkIns) {
+    parts.push(
+      erDonutHtml(
+        [
+          { label: "Google Form", value: stats.bySource.google_form, color: ER_CHART_COLORS.form },
+          { label: "Alumni Connect", value: stats.bySource.alumni_connect, color: ER_CHART_COLORS.connect },
+          { label: "Spot", value: stats.bySource.spot, color: ER_CHART_COLORS.spot },
+          { label: "Former staff", value: stats.bySource.staff, color: ER_CHART_COLORS.staff },
+        ],
+        {
+          title: "Check-in source",
+          caption: "Live desk check-ins. Test rows are excluded.",
+          centerValue: stats.checkIns,
+          centerLabel: "check-ins",
+        }
+      )
+    );
+  }
+  if (stats.formCount) {
+    parts.push(
+      erDonutHtml(
+        [
+          { label: "Arrived", value: stats.arrivedForm, color: ER_CHART_COLORS.arrived },
+          { label: "Yet to arrive", value: stats.pendingForm, color: ER_CHART_COLORS.waiting },
+        ],
+        {
+          title: "Google Form arrival",
+          caption: "Pre-registered alumni who have checked in at the desk.",
+          centerValue: stats.formCount,
+          centerLabel: "on file",
+        }
+      )
+    );
+  }
+  if (stats.checkIns) {
+    const foodRemain = Math.max(0, stats.people - stats.food);
+    parts.push(
+      erStackBarsHtml(
+        [
+          {
+            label: "Food coupons",
+            summary: `${stats.food} / ${stats.people} people`,
+            segments: [
+              { label: "Issued", value: stats.food, color: ER_CHART_COLORS.issued },
+              { label: "Remaining", value: foodRemain, color: ER_CHART_COLORS.pending },
+            ],
+          },
+          {
+            label: "Souvenirs",
+            summary: `${stats.souvenir} / ${stats.checkIns} check-ins`,
+            segments: [
+              { label: "Issued", value: stats.souvenir, color: ER_CHART_COLORS.issued },
+              { label: "Pending", value: stats.souvenirPending, color: ER_CHART_COLORS.pending },
+            ],
+          },
+          {
+            label: "Hillview trip",
+            summary: `${stats.hillview} / ${stats.checkIns} joining`,
+            segments: [
+              { label: "Joining", value: stats.hillview, color: ER_CHART_COLORS.hillview },
+              { label: "Not joining", value: stats.hillviewPending, color: ER_CHART_COLORS.pending },
+            ],
+          },
+        ],
+        {
+          title: "Coupons, souvenirs & Hillview",
+          caption: "Food is coupon count versus people on campus. Souvenir and Hillview are per alumni check-in.",
+        }
+      )
+    );
+    parts.push(erDeptBarsHtml(stats.deptRows));
+    parts.push(erYearColumnsHtml(stats.batches));
+  }
+  if (!parts.length) return "";
+  return `
+    <div>
+      <h3 class="ac-dashboard__subtitle">Charts</h3>
+      <div class="er-charts">${parts.join("")}</div>
+    </div>`;
 }
 
 function erStatCardsHtml(stats) {
@@ -1084,11 +1623,13 @@ function erStatCardsHtml(stats) {
     { label: "People on campus", value: stats.people, tone: "good" },
     { label: "Food coupons issued", value: `${stats.food} / ${stats.people}`, tone: stats.food < stats.people ? "warn" : "good" },
     { label: "Souvenirs issued", value: `${stats.souvenir} / ${stats.checkIns}`, tone: stats.souvenirPending ? "warn" : "good" },
+    { label: "Hillview trip", value: `${stats.hillview} / ${stats.checkIns}`, tone: stats.hillviewPending ? "warn" : "good" },
     { label: "Spot registrations", value: stats.bySource.spot, tone: "neutral" },
+    { label: "Former staff", value: stats.bySource.staff, tone: "neutral" },
     { label: "From Google Form", value: stats.bySource.google_form, tone: "neutral" },
     { label: "From Alumni Connect", value: stats.bySource.alumni_connect, tone: "neutral" },
     { label: "Form yet to arrive", value: stats.pendingForm, tone: stats.pendingForm ? "warn" : "good" },
-    { label: "Test check-ins", value: stats.testCount || 0, tone: stats.testCount ? "warn" : "neutral" },
+    { label: "Test check-ins", value: stats.testStaffCount ? `${stats.testCount} (${stats.testStaffCount} staff)` : stats.testCount || 0, tone: stats.testCount ? "warn" : "neutral" },
   ];
   return `
     <div class="ac-stat-grid">
@@ -1107,13 +1648,17 @@ function erStatCardsHtml(stats) {
 function filterDeskRows(rows, { search = "", department = "", source = "", issue = "" } = {}) {
   return (rows || []).filter((r) => {
     if (department && r.department !== department) return false;
-    if (source && r.source !== source) return false;
+    if (source === EVENT_REG_SOURCES.STAFF) {
+      if (!isStaffCheckIn(r)) return false;
+    } else if (source && r.source !== source) return false;
     if (issue === "test" && !isEventDeskTestRecord(r)) return false;
     if (issue === "live" && isEventDeskTestRecord(r)) return false;
     if (issue === "food" && !r.foodCouponIssued) return false;
     if (issue === "food_pending" && r.foodCouponIssued) return false;
     if (issue === "souvenir" && !r.souvenirIssued) return false;
     if (issue === "souvenir_pending" && r.souvenirIssued) return false;
+    if (issue === "hillview" && !r.hillviewTrip) return false;
+    if (issue === "hillview_pending" && r.hillviewTrip) return false;
     if (search && !matchesSearch(r, search)) return false;
     return true;
   });
@@ -1174,6 +1719,8 @@ export async function mountAdminEventDesk(wrap, { session, notify } = {}) {
           ${erStatCardsHtml(stats)}
         </div>
 
+        ${erChartsHtml(stats)}
+
         <div>
           <h3 class="ac-dashboard__subtitle">Department-wise check-ins</h3>
           <div class="table-scroll">
@@ -1185,9 +1732,11 @@ export async function mountAdminEventDesk(wrap, { session, notify } = {}) {
                   <th>People</th>
                   <th>Food</th>
                   <th>Souvenir</th>
+                  <th>Hillview</th>
                   <th>Form</th>
                   <th>Connect</th>
                   <th>Spot</th>
+                  <th>Staff</th>
                 </tr>
               </thead>
               <tbody>
@@ -1203,13 +1752,15 @@ export async function mountAdminEventDesk(wrap, { session, notify } = {}) {
                       <td>${r.people}</td>
                       <td>${r.food}</td>
                       <td>${r.souvenir}</td>
+                      <td>${r.hillview}</td>
                       <td>${r.form}</td>
                       <td>${r.connect}</td>
                       <td>${r.spot}</td>
+                      <td>${r.staff || 0}</td>
                     </tr>`
                         )
                         .join("")
-                    : `<tr><td colspan="8" class="empty-state">No desk check-ins yet.</td></tr>`
+                    : `<tr><td colspan="10" class="empty-state">No desk check-ins yet.</td></tr>`
                 }
               </tbody>
             </table>
@@ -1268,6 +1819,7 @@ export async function mountAdminEventDesk(wrap, { session, notify } = {}) {
                   (d) =>
                     `<option value="${escapeHtml(d.value)}" ${state.department === d.value ? "selected" : ""}>${escapeHtml(d.label)}</option>`
                 ).join("")}
+                <option value="${EVENT_DESK_STAFF_DEPT}" ${state.department === EVENT_DESK_STAFF_DEPT ? "selected" : ""}>College staff</option>
               </select>
             </div>
             <div class="form-group">
@@ -1277,6 +1829,7 @@ export async function mountAdminEventDesk(wrap, { session, notify } = {}) {
                 <option value="${EVENT_REG_SOURCES.GOOGLE_FORM}" ${state.source === EVENT_REG_SOURCES.GOOGLE_FORM ? "selected" : ""}>Google Form</option>
                 <option value="${EVENT_REG_SOURCES.ALUMNI_CONNECT}" ${state.source === EVENT_REG_SOURCES.ALUMNI_CONNECT ? "selected" : ""}>Alumni Connect</option>
                 <option value="${EVENT_REG_SOURCES.SPOT}" ${state.source === EVENT_REG_SOURCES.SPOT ? "selected" : ""}>Spot</option>
+                <option value="${EVENT_REG_SOURCES.STAFF}" ${state.source === EVENT_REG_SOURCES.STAFF ? "selected" : ""}>Former staff</option>
               </select>
             </div>
             <div class="form-group">
@@ -1289,15 +1842,17 @@ export async function mountAdminEventDesk(wrap, { session, notify } = {}) {
                 <option value="food_pending" ${state.issue === "food_pending" ? "selected" : ""}>Food pending</option>
                 <option value="souvenir" ${state.issue === "souvenir" ? "selected" : ""}>Souvenir issued</option>
                 <option value="souvenir_pending" ${state.issue === "souvenir_pending" ? "selected" : ""}>Souvenir pending</option>
+                <option value="hillview" ${state.issue === "hillview" ? "selected" : ""}>Hillview joining</option>
+                <option value="hillview_pending" ${state.issue === "hillview_pending" ? "selected" : ""}>Hillview not joining</option>
               </select>
             </div>
           </div>
-          <p class="form-hint">Showing ${filtered.length} of ${state.enrollments.length} check-ins. Test rows are treated as unregistered at the desk.</p>
+          <p class="form-hint">Showing ${filtered.length} of ${state.enrollments.length} check-ins. Mark as test works for alumni and former staff. Test rows are treated as unregistered at the desk.</p>
           <div class="table-scroll">
             <table class="data-table">
               <thead>
                 <tr>
-                  <th>Alumni</th>
+                  <th>Name</th>
                   <th>Dept / year</th>
                   <th>Contact</th>
                   <th>People</th>
@@ -1317,18 +1872,29 @@ export async function mountAdminEventDesk(wrap, { session, notify } = {}) {
                   <tr class="${isEventDeskTestRecord(r) ? "er-row--test" : ""}">
                     <td>
                       <strong>${escapeHtml(r.alumniName || "—")}</strong>
-                      ${isEventDeskTestRecord(r) ? ' <span class="badge badge--source-spot">Test</span>' : ""}
+                      ${isEventDeskTestRecord(r) ? ` <span class="badge ${isStaffCheckIn(r) ? "badge--source-staff" : "badge--source-spot"}">Test</span>` : ""}
                       ${r.address ? `<br><small style="color:var(--slate-500)">${escapeHtml(r.address)}</small>` : ""}
                     </td>
-                    <td>${escapeHtml(departmentLabel(r.department))}${r.batch ? `<br><small>${escapeHtml(r.batch)}</small>` : ""}</td>
+                    <td>${escapeHtml(departmentLabel(r.department))}${
+                      isStaffCheckIn(r) && r.yearsServed
+                        ? `<br><small>${escapeHtml(r.yearsServed)}</small>`
+                        : r.batch
+                          ? `<br><small>${escapeHtml(r.batch)}</small>`
+                          : ""
+                    }</td>
                     <td>${escapeHtml(r.mobile || r.whatsapp || "—")}${r.email ? `<br><small style="color:var(--slate-500)">${escapeHtml(r.email)}</small>` : ""}</td>
                     <td>${partySizeOf(r)}${accompanyingOf(r) ? `<br><small>${accompanyingOf(r)} family</small>` : ""}</td>
-                    <td>${escapeHtml(r.company || "—")}${r.jobRole || r.jobSector ? `<br><small style="color:var(--slate-500)">${escapeHtml([r.jobRole, r.jobSector].filter(Boolean).join(" · "))}</small>` : ""}</td>
+                    <td>${
+                      isStaffCheckIn(r)
+                        ? `${escapeHtml(staffRoleLabel(r.staffRole))}${r.yearsServed ? `<br><small style="color:var(--slate-500)">${escapeHtml(r.yearsServed)}</small>` : ""}`
+                        : `${escapeHtml(r.company || "—")}${r.jobRole || r.jobSector ? `<br><small style="color:var(--slate-500)">${escapeHtml([r.jobRole, r.jobSector].filter(Boolean).join(" · "))}</small>` : ""}`
+                    }</td>
                     <td>${escapeHtml(sourceLabel(r.source))}</td>
                     <td>
                       <label class="checkbox-label"><input type="checkbox" data-er-food="${escapeHtml(r.id)}" ${r.foodCouponIssued ? "checked" : ""}> Food</label>
                       <input type="number" class="er-food-count-input" min="0" max="${MAX_MEMBERS_ATTENDING}" data-er-food-count="${escapeHtml(r.id)}" value="${escapeHtml(String(foodCouponCountOf(r)))}" ${r.foodCouponIssued ? "" : "disabled"} aria-label="Food coupons">
                       <label class="checkbox-label"><input type="checkbox" data-er-souvenir="${escapeHtml(r.id)}" ${r.souvenirIssued ? "checked" : ""}> Souvenir</label>
+                      <label class="checkbox-label"><input type="checkbox" data-er-hillview="${escapeHtml(r.id)}" ${r.hillviewTrip ? "checked" : ""}> Hillview</label>
                     </td>
                     <td>
                       <label class="checkbox-label"><input type="checkbox" data-er-test="${escapeHtml(r.id)}" ${isEventDeskTestRecord(r) ? "checked" : ""}> Mark as test</label>
@@ -1387,13 +1953,14 @@ export async function mountAdminEventDesk(wrap, { session, notify } = {}) {
         toast(err.message || "Could not import the spreadsheet.", "error");
       }
     });
-    wrap.querySelectorAll("[data-er-food], [data-er-souvenir], [data-er-food-count]").forEach((input) => {
+    wrap.querySelectorAll("[data-er-food], [data-er-souvenir], [data-er-hillview], [data-er-food-count]").forEach((input) => {
       input.addEventListener("change", async () => {
-        const id = input.dataset.erFood || input.dataset.erSouvenir || input.dataset.erFoodCount;
+        const id = input.dataset.erFood || input.dataset.erSouvenir || input.dataset.erHillview || input.dataset.erFoodCount;
         const row = state.enrollments.find((r) => r.id === id);
         if (!row) return;
         const foodEl = wrap.querySelector(`[data-er-food="${id}"]`);
         const souvenirEl = wrap.querySelector(`[data-er-souvenir="${id}"]`);
+        const hillviewEl = wrap.querySelector(`[data-er-hillview="${id}"]`);
         const countEl = wrap.querySelector(`[data-er-food-count="${id}"]`);
         const issued = !!foodEl?.checked;
         const foodCouponCount = normalizeFoodCouponCount(countEl?.value, {
@@ -1410,16 +1977,18 @@ export async function mountAdminEventDesk(wrap, { session, notify } = {}) {
               foodCouponIssued: issued,
               foodCouponCount,
               souvenirIssued: !!souvenirEl?.checked,
+              hillviewTrip: !!hillviewEl?.checked,
               updatedAt: serverTimestamp(),
             })
           );
           row.foodCouponIssued = issued;
           row.foodCouponCount = foodCouponCount;
           row.souvenirIssued = !!souvenirEl?.checked;
+          row.hillviewTrip = !!hillviewEl?.checked;
           render();
         } catch (err) {
           console.error(err);
-          toast("Could not update coupon / souvenir.", "error");
+          toast("Could not update coupon / souvenir / trip.", "error");
           if (input.type === "checkbox") input.checked = !input.checked;
         }
       });
@@ -1433,19 +2002,26 @@ export async function mountAdminEventDesk(wrap, { session, notify } = {}) {
         try {
           await updateDoc(
             doc(db, ALUMNI_CONTACTS_COLLECTION, id),
-            withSession({
-              department: row.department,
-              createdByUserId: row.createdByUserId,
-              recordKind: EVENT_DESK_RECORD_KIND,
-              isTest,
-              updatedAt: serverTimestamp(),
-            })
+            withSession(
+              omitUndefined({
+                department: row.department || (isStaffCheckIn(row) ? EVENT_DESK_STAFF_DEPT : ""),
+                createdByUserId: row.createdByUserId,
+                recordKind: EVENT_DESK_RECORD_KIND,
+                source: row.source,
+                guestKind: row.guestKind || (isStaffCheckIn(row) ? "staff" : "alumni"),
+                staffRole: row.staffRole,
+                yearsServed: row.yearsServed,
+                isTest,
+                updatedAt: serverTimestamp(),
+              })
+            )
           );
           row.isTest = isTest;
+          const who = row.alumniName || (isStaffCheckIn(row) ? "Former staff" : "Alumni");
           toast(
             isTest
-              ? `${row.alumniName || "Alumni"} marked as test and treated as unregistered.`
-              : `${row.alumniName || "Alumni"} is a live check-in again.`,
+              ? `${who} marked as test and treated as unregistered ${deskGuestLabel(row)}.`
+              : `${who} is a live ${deskGuestLabel(row)} check-in again.`,
             "success"
           );
           render();

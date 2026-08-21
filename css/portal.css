@@ -269,6 +269,11 @@
   color: #c2410c;
 }
 
+.badge--source-staff {
+  background: #ccfbf1;
+  color: #0f766e;
+}
+
 /* Alumni Connect status tones */
 .badge--status {
   border: 1px solid transparent;
@@ -2383,7 +2388,8 @@
   color: var(--slate-400);
 }
 
-.er-food-total {
+.er-food-total,
+.er-hillview-total {
   margin: 0;
 }
 
@@ -2413,6 +2419,232 @@
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
   gap: 1.25rem;
+}
+
+.er-charts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 1rem;
+}
+
+.er-chart {
+  margin: 0;
+  padding: 1rem 1.1rem 1.1rem;
+  background: #fff;
+  border: 1px solid var(--slate-200);
+  border-radius: 14px;
+}
+
+.er-chart--wide {
+  grid-column: 1 / -1;
+}
+
+.er-chart__title {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--navy, #0f172a);
+  margin: 0 0 0.75rem;
+}
+
+.er-chart__caption {
+  margin: 0.75rem 0 0;
+  font-size: 0.75rem;
+  color: var(--slate-500);
+  line-height: 1.4;
+}
+
+.er-donut-wrap {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 1rem 1.5rem;
+}
+
+.er-donut {
+  position: relative;
+  width: 160px;
+  height: 160px;
+  flex: 0 0 160px;
+}
+
+.er-donut svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.er-donut__center {
+  position: absolute;
+  inset: 28%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  pointer-events: none;
+}
+
+.er-donut__center strong {
+  font-size: 1.35rem;
+  line-height: 1.1;
+  color: var(--navy, #0f172a);
+}
+
+.er-donut__center span {
+  font-size: 0.68rem;
+  color: var(--slate-500);
+}
+
+.er-chart__legend {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  font-size: 0.85rem;
+  color: var(--slate-700);
+  flex: 1 1 140px;
+}
+
+.er-chart__legend--row {
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 0.75rem 1.25rem;
+  margin-bottom: 0.85rem;
+}
+
+.er-chart__legend li {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.er-chart__legend strong {
+  margin-left: auto;
+}
+
+.er-chart__swatch {
+  width: 0.7rem;
+  height: 0.7rem;
+  border-radius: 4px;
+  flex: 0 0 auto;
+}
+
+.er-stack {
+  margin-bottom: 0.85rem;
+}
+
+.er-stack:last-of-type {
+  margin-bottom: 0;
+}
+
+.er-stack__head {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  font-size: 0.82rem;
+  margin-bottom: 0.3rem;
+  color: var(--slate-700);
+}
+
+.er-stack__track {
+  display: flex;
+  height: 18px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: #e2e8f0;
+}
+
+.er-stack__seg {
+  display: block;
+  min-width: 0;
+  height: 100%;
+}
+
+.er-stack__seg--empty {
+  width: 100%;
+  background: #e2e8f0;
+}
+
+.er-dept-bar {
+  display: grid;
+  grid-template-columns: 3.5rem 1fr;
+  gap: 0.35rem 0.7rem;
+  align-items: center;
+  margin-bottom: 0.7rem;
+}
+
+.er-dept-bar:last-of-type {
+  margin-bottom: 0;
+}
+
+.er-dept-bar__code {
+  font-weight: 700;
+  font-size: 0.82rem;
+  color: var(--navy, #0f172a);
+}
+
+.er-dept-bar__rows {
+  display: flex;
+  flex-direction: column;
+  gap: 0.28rem;
+}
+
+.er-dept-bar__row {
+  display: grid;
+  grid-template-columns: 1fr 2.2rem;
+  gap: 0.4rem;
+  align-items: center;
+  font-size: 0.72rem;
+  color: var(--slate-500);
+}
+
+.er-dept-bar__track {
+  height: 10px;
+  border-radius: 999px;
+  background: #f1f5f9;
+  overflow: hidden;
+}
+
+.er-dept-bar__fill {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+}
+
+.er-cols {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.55rem;
+  overflow-x: auto;
+  min-height: 160px;
+  padding-top: 0.35rem;
+}
+
+.er-col {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  min-width: 2.15rem;
+  gap: 0.25rem;
+}
+
+.er-col__bar {
+  width: 1.15rem;
+  border-radius: 6px 6px 2px 2px;
+}
+
+.er-col__value {
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: var(--navy, #0f172a);
+}
+
+.er-col__label {
+  font-size: 0.68rem;
+  color: var(--slate-500);
 }
 
 .er-row--test {

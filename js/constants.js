@@ -133,7 +133,20 @@ export const EVENT_REG_SOURCES = {
   GOOGLE_FORM: "google_form",
   ALUMNI_CONNECT: "alumni_connect",
   SPOT: "spot",
+  STAFF: "staff",
 };
+
+/** Event Desk check-ins for former teachers, principal, lab/office staff */
+export const EVENT_DESK_STAFF_DEPT = "STAFF";
+
+export const EVENT_STAFF_ROLES = [
+  { value: "principal", label: "Principal / former principal" },
+  { value: "teacher", label: "Teacher / faculty" },
+  { value: "lab_staff", label: "Lab staff" },
+  { value: "office_staff", label: "Office / administrative staff" },
+  { value: "librarian", label: "Librarian" },
+  { value: "other", label: "Other staff" },
+];
 
 export const CERTIFICATE_SIGNATORIES = [
   { name: "Dr. Baiju Sasidharan", title: "Principal" },

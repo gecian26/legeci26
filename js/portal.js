@@ -76,7 +76,7 @@ import {
 import { downloadAlumniContactsPdf } from "../js/alumni-contacts-pdf.js";
 import { loadLeaderboardPanel } from "../js/leaderboard.js";
 import { mountVolunteerCertificates, isCertificateBatchRecord } from "../js/volunteer-certificates.js?v=th1";
-import { mountEventDesk, inferTaskTypeFromTitle } from "../js/event-registration.js?v=er15";
+import { mountEventDesk, inferTaskTypeFromTitle } from "../js/event-registration.js?v=er19";
 import {
   mountTreasurerAccounts,
   loadExpenses,
@@ -1028,7 +1028,7 @@ async function loadDeptMainTasks(session) {
             taskType === TASK_TYPES.VOLUNTEER_CERTIFICATE
               ? "Volunteer Certificate assigned. Open Certificates in the sidebar to generate PDFs."
               : taskType === TASK_TYPES.EVENT_REGISTRATION
-                ? "Event Registration assigned. Volunteers check alumni in from Event Desk."
+                ? "Event Registration assigned. Volunteers check alumni and former staff in from Event Desk."
                 : "Task replicated for your department.",
             "success"
           );
@@ -1103,7 +1103,7 @@ async function loadDeptTasks(session) {
                 inferTaskType(t) === TASK_TYPES.VOLUNTEER_CERTIFICATE
                   ? `<p class="form-hint">Generate PDFs from the <strong>Certificates</strong> sidebar after this task is assigned.</p>`
                   : inferTaskType(t) === TASK_TYPES.EVENT_REGISTRATION
-                    ? `<p class="form-hint">Assigned volunteers use <strong>Event Desk</strong> for already-registered search and spot registration.</p>`
+                    ? `<p class="form-hint">Assigned volunteers use <strong>Event Desk</strong> for alumni check-in, spot registration, and former staff.</p>`
                     : ""
               }
             </div>
