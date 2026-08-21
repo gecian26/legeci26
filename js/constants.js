@@ -140,12 +140,17 @@ export const EVENT_REG_SOURCES = {
 export const EVENT_DESK_STAFF_DEPT = "STAFF";
 
 export const EVENT_STAFF_ROLES = [
-  { value: "principal", label: "Principal / former principal" },
-  { value: "teacher", label: "Teacher / faculty" },
+  { value: "principal", label: "Principal" },
+  { value: "teacher", label: "Faculty" },
   { value: "lab_staff", label: "Lab staff" },
   { value: "office_staff", label: "Office / administrative staff" },
   { value: "librarian", label: "Librarian" },
   { value: "other", label: "Other staff" },
+];
+
+export const HILLVIEW_TRANSPORT = [
+  { value: "own_vehicle", label: "Own vehicle" },
+  { value: "college_bus", label: "College bus" },
 ];
 
 export const CERTIFICATE_SIGNATORIES = [

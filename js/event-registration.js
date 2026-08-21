@@ -22,20 +22,24 @@ import {
   EVENT_REG_SOURCES,
   EVENT_DESK_STAFF_DEPT,
   EVENT_STAFF_ROLES,
+  HILLVIEW_TRANSPORT,
   DEPARTMENTS,
   MAX_MEMBERS_ATTENDING,
   escapeHtml,
   normalizeUsername,
-} from "./constants.js?v=er18";
+} from "./constants.js?v=er25";
 import {
   jobSectorOptionsHtml,
   passoutYearSearchFieldHtml,
   loadAllAlumniContacts,
+  loadRegistrationSettings,
   normalizePhoneDigits,
   normalizePersonName,
   normalizeMembersAttending,
 } from "./alumni-connect.js?v=er4";
 import { parseAlumniRegistrationExcel, inferDepartmentCode } from "./event-registration-excel.js?v=er14";
+import { downloadDeskFeeReceipt, deskFeeModeLabel, makeDeskReceiptNo } from "./event-desk-receipt.js?v=er22";
+import { copyDeskFeeIntoTreasurerBooks, findTreasurerContactForDeskFee } from "./legeci-accounts.js?v=fn4";
 
 export function isEventRegistrationTask(task) {
   return inferTaskTypeFromTitle(task) === TASK_TYPES.EVENT_REGISTRATION;
@@ -307,6 +311,119 @@ function hillviewCount(rows) {
   return (rows || []).filter((r) => r.hillviewTrip).length;
 }
 
+function normalizeHillviewTransport(value, joining = false) {
+  if (!joining) return "";
+  const mode = String(value || "").trim();
+  return HILLVIEW_TRANSPORT.some((o) => o.value === mode) ? mode : "";
+}
+
+function hillviewTransportLabel(value) {
+  return HILLVIEW_TRANSPORT.find((o) => o.value === value)?.label || "";
+}
+
+function hillviewTransportCount(rows, mode) {
+  return (rows || []).filter((r) => r.hillviewTrip && r.hillviewTransport === mode).length;
+}
+
+function isDeskFeeReceived(row) {
+  return row?.deskFeeReceived === true;
+}
+
+function deskFeeAmountOf(row) {
+  const n = Math.round(Number(row?.deskFeeAmount) || 0);
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}
+
+function formatRupee(amount) {
+  return `₹${Math.round(Number(amount) || 0).toLocaleString("en-IN")}`;
+}
+
+function suggestedDeskFeeAmount(record, feeSettings) {
+  if (isDeskFeeReceived(record) && deskFeeAmountOf(record) > 0) return deskFeeAmountOf(record);
+  const unit = Math.max(0, Number(feeSettings?.feeAmount) || 0);
+  return unit * partySizeOf(record);
+}
+
+function todayISODate() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+function deskFeeLedgerStatus(row) {
+  if (!isDeskFeeReceived(row) || isEventDeskTestRecord(row)) return "none";
+  if (row.deskFeeTransferred) return "moved";
+  if (row.deskFeeVerified) return "verified";
+  return "pending";
+}
+
+function deskFeeStatusBadge(row) {
+  const status = deskFeeLedgerStatus(row);
+  if (status === "moved") return `<span class="badge badge--status badge--status-green">In treasurer</span>`;
+  if (status === "verified") return `<span class="badge badge--status badge--status-orange">Verified · not moved</span>`;
+  if (status === "pending") return `<span class="badge badge--source-spot">Desk only</span>`;
+  return "";
+}
+
+function feeCellHtml(row, { admin = false } = {}) {
+  if (!isDeskFeeReceived(row)) {
+    return `<span class="er-fee-empty">Not collected</span>`;
+  }
+  const receiptNo = row.deskReceiptNo ? `<br><small>${escapeHtml(row.deskReceiptNo)}</small>` : "";
+  const status = deskFeeLedgerStatus(row);
+  const actions = admin
+    ? `${deskFeeStatusBadge(row)}
+       ${
+         status === "pending"
+           ? `<button type="button" class="btn btn--sm btn--primary er-receipt-btn" data-er-fee-verify="${escapeHtml(row.id)}">Verify</button>`
+           : ""
+       }
+       ${
+         status === "verified"
+           ? `<button type="button" class="btn btn--sm btn--primary er-receipt-btn" data-er-fee-move="${escapeHtml(row.id)}">Move to treasurer</button>`
+           : ""
+       }`
+    : "";
+  return `<strong>${escapeHtml(formatRupee(deskFeeAmountOf(row)))}</strong><br><small>${escapeHtml(
+    deskFeeModeLabel(row.deskFeeMode)
+  )}</small>${receiptNo}
+    <button type="button" class="btn btn--sm btn--ghost er-receipt-btn" data-er-receipt="${escapeHtml(row.id)}">Receipt</button>
+    ${actions}`;
+}
+
+function bindDeskReceiptButtons(root, { enrollments, toast } = {}) {
+  root?.querySelectorAll("[data-er-receipt]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const row = (enrollments || []).find((r) => r.id === btn.dataset.erReceipt);
+      if (!isDeskFeeReceived(row)) {
+        toast?.("No registration fee is recorded for this check-in.", "error");
+        return;
+      }
+      try {
+        downloadDeskFeeReceipt(row);
+      } catch (err) {
+        console.error(err);
+        toast?.(err.message || "Could not generate the receipt.", "error");
+      }
+    });
+  });
+}
+
+function afterFeeSave(result, prefix, toast, message) {
+  const wantsPdf = !!document.getElementById(`${prefix}FeeReceipt`)?.checked;
+  if (wantsPdf && isDeskFeeReceived(result?.record)) {
+    try {
+      downloadDeskFeeReceipt(result.record);
+      toast?.(`${message} Receipt downloaded.`, "success");
+      return;
+    } catch (err) {
+      console.error(err);
+      toast?.(`${message} Could not generate the receipt PDF.`, "error");
+      return;
+    }
+  }
+  toast?.(message, "success");
+}
+
 function normalizeFoodCouponCount(value, { issued = false, membersAttending = 1 } = {}) {
   if (!issued) return 0;
   const n = Math.floor(Number(value));
@@ -345,6 +462,22 @@ function wireFoodCouponControls(prefix) {
   sync();
 }
 
+function wireHillviewTransport(prefix) {
+  const hillEl = document.getElementById(`${prefix}Hillview`);
+  const wrap = document.getElementById(`${prefix}HillviewTransportWrap`);
+  const radios = [...document.querySelectorAll(`input[name="${prefix}HillviewTransport"]`)];
+  if (!hillEl) return;
+  const sync = () => {
+    const on = hillEl.checked;
+    if (wrap) wrap.hidden = !on;
+    radios.forEach((input) => {
+      input.disabled = !on;
+    });
+  };
+  hillEl.addEventListener("change", sync);
+  sync();
+}
+
 function issueRowHtml(prefix, r = {}, { foodIssuedTotal: issuedTotal = 0, hillviewTotal = 0 } = {}) {
   const couponValue = r.foodCouponIssued
     ? foodCouponCountOf(r) || partySizeOf(r)
@@ -366,17 +499,113 @@ function issueRowHtml(prefix, r = {}, { foodIssuedTotal: issuedTotal = 0, hillvi
         <input type="checkbox" id="${prefix}Souvenir" ${r.souvenirIssued ? "checked" : ""}>
         Souvenir issued
       </label>
-      <div class="er-issue-food">
+      <div class="er-issue-food er-hillview-block">
         <label class="checkbox-label">
           <input type="checkbox" id="${prefix}Hillview" ${r.hillviewTrip ? "checked" : ""}>
           Joining Hillview trip
         </label>
         <span class="form-hint er-hillview-total">Joining: <strong>${hillviewTotal}</strong></span>
+        <div class="er-fee-modes er-hillview-transport" id="${prefix}HillviewTransportWrap" ${r.hillviewTrip ? "" : "hidden"}>
+          <span class="form-hint" style="margin:0;">Travel by</span>
+          <label class="checkbox-label">
+            <input type="radio" name="${prefix}HillviewTransport" value="own_vehicle" ${r.hillviewTransport === "own_vehicle" ? "checked" : ""}>
+            Own vehicle
+          </label>
+          <label class="checkbox-label">
+            <input type="radio" name="${prefix}HillviewTransport" value="college_bus" ${r.hillviewTransport === "college_bus" ? "checked" : ""}>
+            College bus
+          </label>
+        </div>
       </div>
     </div>`;
 }
 
-function enrollmentFormHtml(prefix, record = {}, { lockedIdentity = false, foodIssuedTotal: issuedTotal = 0, hillviewTotal = 0 } = {}) {
+function feeRowHtml(prefix, r = {}, feeSettings = null) {
+  const paid = isDeskFeeReceived(r);
+  const amount = suggestedDeskFeeAmount(r, feeSettings);
+  const mode = r.deskFeeMode === "online" ? "online" : "cash";
+  const unit = Math.max(0, Number(feeSettings?.feeAmount) || 0);
+  return `
+    <div class="er-fee-row">
+      <label class="checkbox-label">
+        <input type="checkbox" id="${prefix}FeePaid" ${paid ? "checked" : ""}>
+        Registration fee received
+      </label>
+      <label class="er-food-count" for="${prefix}FeeAmount">
+        Amount (₹)
+        <input type="number" id="${prefix}FeeAmount" min="0" step="1" value="${escapeHtml(String(amount))}">
+      </label>
+      <div class="er-fee-modes" role="group" aria-label="Payment mode">
+        <label class="checkbox-label">
+          <input type="radio" name="${prefix}FeeMode" value="cash" ${mode !== "online" ? "checked" : ""}>
+          Cash
+        </label>
+        <label class="checkbox-label">
+          <input type="radio" name="${prefix}FeeMode" value="online" ${mode === "online" ? "checked" : ""}>
+          Online
+        </label>
+      </div>
+      <label class="er-food-count er-fee-ref" for="${prefix}FeeRef">
+        UPI / ref
+        <input type="text" id="${prefix}FeeRef" value="${escapeHtml(r.deskFeeRef || "")}" placeholder="Optional">
+      </label>
+      <label class="checkbox-label">
+        <input type="checkbox" id="${prefix}FeeReceipt" ${paid ? "checked" : ""}>
+        Download receipt
+      </label>
+      ${
+        r.deskReceiptNo
+          ? `<span class="form-hint er-fee-receipt-no">Receipt ${escapeHtml(r.deskReceiptNo)}</span>`
+          : unit
+            ? `<span class="form-hint">Configured fee: ${escapeHtml(formatRupee(unit))} per person</span>`
+            : ""
+      }
+      <span class="form-hint er-fee-books-hint">Stays on Event Desk until admin verifies and moves it to treasurer books.</span>
+    </div>`;
+}
+
+function wireFeeControls(prefix, feeSettings) {
+  const paidEl = document.getElementById(`${prefix}FeePaid`);
+  const amountEl = document.getElementById(`${prefix}FeeAmount`);
+  const refEl = document.getElementById(`${prefix}FeeRef`);
+  const receiptEl = document.getElementById(`${prefix}FeeReceipt`);
+  const membersEl = document.getElementById(`${prefix}Members`);
+  const modes = [...document.querySelectorAll(`input[name="${prefix}FeeMode"]`)];
+  if (!paidEl || !amountEl) return;
+
+  const suggested = () => {
+    const family = normalizeAccompanyingFamily(membersEl?.value);
+    const people = partySizeFromAccompanying(family);
+    return (Number(feeSettings?.feeAmount) || 0) * people;
+  };
+
+  const sync = () => {
+    const on = paidEl.checked;
+    amountEl.disabled = !on;
+    if (refEl) refEl.disabled = !on;
+    if (receiptEl) receiptEl.disabled = !on;
+    modes.forEach((input) => {
+      input.disabled = !on;
+    });
+    if (on) {
+      const n = Math.floor(Number(amountEl.value));
+      if (!Number.isFinite(n) || n <= 0) amountEl.value = String(suggested());
+      if (receiptEl && !receiptEl.dataset.touched) receiptEl.checked = true;
+    }
+  };
+
+  paidEl.addEventListener("change", sync);
+  membersEl?.addEventListener("change", () => {
+    if (!paidEl.checked) return;
+    amountEl.value = String(suggested());
+  });
+  receiptEl?.addEventListener("change", () => {
+    receiptEl.dataset.touched = "1";
+  });
+  sync();
+}
+
+function enrollmentFormHtml(prefix, record = {}, { lockedIdentity = false, foodIssuedTotal: issuedTotal = 0, hillviewTotal = 0, feeSettings = null } = {}) {
   const r = record || {};
   const accompanying = accompanyingOf(r);
   return `
@@ -430,10 +659,11 @@ function enrollmentFormHtml(prefix, record = {}, { lockedIdentity = false, foodI
       <label for="${prefix}JobRole">Job Role</label>
       <input type="text" id="${prefix}JobRole" value="${escapeHtml(r.jobRole || "")}" placeholder="Designation / role">
     </div>
-    ${issueRowHtml(prefix, r, { foodIssuedTotal: issuedTotal, hillviewTotal })}`;
+    ${issueRowHtml(prefix, r, { foodIssuedTotal: issuedTotal, hillviewTotal })}
+    ${feeRowHtml(prefix, r, feeSettings)}`;
 }
 
-function staffFormHtml(prefix, record = {}, { foodIssuedTotal: issuedTotal = 0, hillviewTotal = 0 } = {}) {
+function staffFormHtml(prefix, record = {}) {
   const r = record || {};
   const accompanying = accompanyingOf(r);
   const deptValue = r.department === EVENT_DESK_STAFF_DEPT ? "" : r.department || "";
@@ -481,8 +711,7 @@ function staffFormHtml(prefix, record = {}, { foodIssuedTotal: issuedTotal = 0, 
         <label for="${prefix}Notes">Notes</label>
         <input type="text" id="${prefix}Notes" value="${escapeHtml(r.notes || "")}" placeholder="Optional">
       </div>
-    </div>
-    ${issueRowHtml(prefix, r, { foodIssuedTotal: issuedTotal, hillviewTotal })}`;
+    </div>`;
 }
 
 function readEnrollmentForm(prefix, { departmentLocked } = {}) {
@@ -508,6 +737,13 @@ function readEnrollmentForm(prefix, { departmentLocked } = {}) {
   );
   const souvenirIssued = !!document.getElementById(`${prefix}Souvenir`)?.checked;
   const hillviewTrip = !!document.getElementById(`${prefix}Hillview`)?.checked;
+  const transportEl = document.querySelector(`input[name="${prefix}HillviewTransport"]:checked`);
+  const hillviewTransport = normalizeHillviewTransport(transportEl?.value, hillviewTrip);
+  const deskFeeReceived = !!document.getElementById(`${prefix}FeePaid`)?.checked;
+  const deskFeeAmount = Math.max(0, Math.round(Number(document.getElementById(`${prefix}FeeAmount`)?.value) || 0));
+  const modeEl = document.querySelector(`input[name="${prefix}FeeMode"]:checked`);
+  const deskFeeMode = deskFeeReceived ? (modeEl?.value === "online" ? "online" : "cash") : "";
+  const deskFeeRef = document.getElementById(`${prefix}FeeRef`)?.value.trim() || "";
 
   const errors = [];
   if (!alumniName) errors.push("Alumni name is required.");
@@ -516,6 +752,9 @@ function readEnrollmentForm(prefix, { departmentLocked } = {}) {
   if (mobile && !/^\d{10,15}$/.test(mobile)) errors.push("Mobile must be 10–15 digits.");
   if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) errors.push("Email looks invalid.");
   if (batch && !/^\d{4}$/.test(batch)) errors.push("Passout year must be a 4-digit year.");
+  if (deskFeeReceived && deskFeeAmount <= 0) errors.push("Enter the registration fee amount received.");
+  if (deskFeeReceived && !deskFeeMode) errors.push("Choose cash or online payment.");
+  if (hillviewTrip && !hillviewTransport) errors.push("Choose own vehicle or college bus for the Hillview trip.");
 
   return {
     errors,
@@ -536,6 +775,11 @@ function readEnrollmentForm(prefix, { departmentLocked } = {}) {
       foodCouponCount,
       souvenirIssued,
       hillviewTrip,
+      hillviewTransport,
+      deskFeeReceived,
+      deskFeeAmount: deskFeeReceived ? deskFeeAmount : 0,
+      deskFeeMode,
+      deskFeeRef: deskFeeReceived ? deskFeeRef : "",
       guestKind: "alumni",
     },
   };
@@ -561,13 +805,6 @@ function readStaffForm(prefix, session) {
     document.getElementById(`${prefix}Members`)?.value
   );
   const membersAttending = partySizeFromAccompanying(familyAccompanying);
-  const foodCouponIssued = !!document.getElementById(`${prefix}Food`)?.checked;
-  const foodCouponCount = normalizeFoodCouponCount(
-    document.getElementById(`${prefix}FoodCount`)?.value,
-    { issued: foodCouponIssued, membersAttending }
-  );
-  const souvenirIssued = !!document.getElementById(`${prefix}Souvenir`)?.checked;
-  const hillviewTrip = !!document.getElementById(`${prefix}Hillview`)?.checked;
   const roleLabel = staffRoleLabel(staffRole);
 
   const errors = [];
@@ -596,10 +833,11 @@ function readStaffForm(prefix, session) {
       guestKind: "staff",
       membersAttending,
       familyAccompanying,
-      foodCouponIssued,
-      foodCouponCount,
-      souvenirIssued,
-      hillviewTrip,
+      foodCouponIssued: false,
+      foodCouponCount: 0,
+      souvenirIssued: false,
+      hillviewTrip: false,
+      hillviewTransport: "",
     },
   };
 }
@@ -771,6 +1009,56 @@ function lookupCardHtml(item) {
     </button>`;
 }
 
+function issuedControlsHtml(row, { canEdit = true } = {}) {
+  if (isStaffCheckIn(row)) {
+    return `<span class="er-fee-empty">Not issued to former staff</span>`;
+  }
+  const transportText = hillviewTransportLabel(row.hillviewTransport);
+  if (canEdit) {
+    return `<label class="checkbox-label"><input type="checkbox" data-er-food="${escapeHtml(row.id)}" ${row.foodCouponIssued ? "checked" : ""}> Food</label>
+      <input type="number" class="er-food-count-input" min="0" max="${MAX_MEMBERS_ATTENDING}" data-er-food-count="${escapeHtml(row.id)}" value="${escapeHtml(String(foodCouponCountOf(row)))}" ${row.foodCouponIssued ? "" : "disabled"} aria-label="Food coupons">
+      <label class="checkbox-label"><input type="checkbox" data-er-souvenir="${escapeHtml(row.id)}" ${row.souvenirIssued ? "checked" : ""}> Souvenir</label>
+      <label class="checkbox-label"><input type="checkbox" data-er-hillview="${escapeHtml(row.id)}" ${row.hillviewTrip ? "checked" : ""}> Hillview</label>
+      <select class="er-hillview-transport-select" data-er-hillview-transport="${escapeHtml(row.id)}" ${row.hillviewTrip ? "" : "disabled"} aria-label="Hillview travel">
+        <option value="" ${row.hillviewTransport ? "" : "selected"}>Own vehicle or bus?</option>
+        ${HILLVIEW_TRANSPORT.map(
+          (o) =>
+            `<option value="${escapeHtml(o.value)}" ${row.hillviewTransport === o.value ? "selected" : ""}>${escapeHtml(o.label)}</option>`
+        ).join("")}
+      </select>`;
+  }
+  return `${row.foodCouponIssued ? `Food ×${foodCouponCountOf(row)}` : "—"} / ${row.souvenirIssued ? "Souvenir" : "—"} / ${
+    row.hillviewTrip ? `Hillview${transportText ? ` · ${transportText}` : ""}` : "—"
+  }`;
+}
+
+function readDeskIssueToggle(wrap, id, row) {
+  const foodEl = wrap.querySelector(`[data-er-food="${id}"]`);
+  const souvenirEl = wrap.querySelector(`[data-er-souvenir="${id}"]`);
+  const hillviewEl = wrap.querySelector(`[data-er-hillview="${id}"]`);
+  const countEl = wrap.querySelector(`[data-er-food-count="${id}"]`);
+  const transportEl = wrap.querySelector(`[data-er-hillview-transport="${id}"]`);
+  const issued = !!foodEl?.checked;
+  const hillviewTrip = !!hillviewEl?.checked;
+  if (countEl) countEl.disabled = !issued;
+  if (transportEl) {
+    transportEl.disabled = !hillviewTrip;
+    if (!hillviewTrip) transportEl.value = "";
+  }
+  const foodCouponCount = normalizeFoodCouponCount(countEl?.value, {
+    issued,
+    membersAttending: row.membersAttending,
+  });
+  if (countEl) countEl.value = String(foodCouponCount);
+  return {
+    foodCouponIssued: issued,
+    foodCouponCount,
+    souvenirIssued: !!souvenirEl?.checked,
+    hillviewTrip,
+    hillviewTransport: normalizeHillviewTransport(transportEl?.value, hillviewTrip),
+  };
+}
+
 function checkInRowHtml(row, { canEdit = true } = {}) {
   return `
     <tr>
@@ -780,16 +1068,8 @@ function checkInRowHtml(row, { canEdit = true } = {}) {
       <td>${escapeHtml(departmentLabel(row.department))}${row.batch ? `<br><small>${escapeHtml(row.batch)}</small>` : ""}</td>
       <td>${escapeHtml(row.mobile || row.whatsapp || "—")}<br><small style="color:var(--slate-500)">${escapeHtml(row.email || "")}</small></td>
       <td>${partySizeOf(row)}${accompanyingOf(row) ? `<br><small>${accompanyingOf(row)} family</small>` : ""}</td>
-      <td>
-        ${
-          canEdit
-            ? `<label class="checkbox-label"><input type="checkbox" data-er-food="${escapeHtml(row.id)}" ${row.foodCouponIssued ? "checked" : ""}> Food</label>
-               <input type="number" class="er-food-count-input" min="0" max="${MAX_MEMBERS_ATTENDING}" data-er-food-count="${escapeHtml(row.id)}" value="${escapeHtml(String(foodCouponCountOf(row)))}" ${row.foodCouponIssued ? "" : "disabled"} aria-label="Food coupons">
-               <label class="checkbox-label"><input type="checkbox" data-er-souvenir="${escapeHtml(row.id)}" ${row.souvenirIssued ? "checked" : ""}> Souvenir</label>
-               <label class="checkbox-label"><input type="checkbox" data-er-hillview="${escapeHtml(row.id)}" ${row.hillviewTrip ? "checked" : ""}> Hillview</label>`
-            : `${row.foodCouponIssued ? `Food ×${foodCouponCountOf(row)}` : "—"} / ${row.souvenirIssued ? "Souvenir" : "—"} / ${row.hillviewTrip ? "Hillview" : "—"}`
-        }
-      </td>
+      <td>${issuedControlsHtml(row, { canEdit })}</td>
+      <td>${feeCellHtml(row)}</td>
     </tr>`;
 }
 
@@ -856,11 +1136,54 @@ async function persistCheckIn({ session, task, source, sourceId, formPrefix, exi
   const row = live || testHit;
   if (row?.id) {
     payload.id = row.id;
+    if (row.createdByUserId) payload.createdByUserId = row.createdByUserId;
+    if (row.createdByName) payload.createdByName = row.createdByName;
+    if (row.deskReceiptNo) payload.deskReceiptNo = row.deskReceiptNo;
   } else {
     payload.createdByUserId = normalizeUsername(session.username);
     payload.createdByName = session.displayName || session.username;
   }
-  return saveCheckIn(payload);
+  if (payload.deskFeeReceived) {
+    payload.deskFeeReceivedAt = row?.deskFeeReceivedAt || todayISODate();
+    payload.deskFeeReceivedBy = row?.deskFeeReceivedBy || session.displayName || session.username;
+    if (row?.deskFeeVerified) {
+      payload.deskFeeVerified = true;
+      payload.deskFeeVerifiedAt = row.deskFeeVerifiedAt || "";
+      payload.deskFeeVerifiedBy = row.deskFeeVerifiedBy || "";
+    }
+    if (row?.deskFeeTransferred) {
+      payload.deskFeeTransferred = true;
+      payload.deskFeeTransferredAt = row.deskFeeTransferredAt || "";
+      payload.deskFeeTransferredBy = row.deskFeeTransferredBy || "";
+      payload.deskFeeTreasurerContactId = row.deskFeeTreasurerContactId || "";
+    }
+  } else {
+    payload.deskFeeReceivedAt = "";
+    payload.deskFeeReceivedBy = "";
+    if (row?.deskReceiptNo) payload.deskReceiptNo = row.deskReceiptNo;
+    if (row?.deskFeeTransferred) {
+      payload.deskFeeTransferred = true;
+      payload.deskFeeTreasurerContactId = row.deskFeeTreasurerContactId || "";
+    }
+  }
+  const id = await saveCheckIn(payload);
+  if (payload.deskFeeReceived && !payload.deskReceiptNo) {
+    const deskReceiptNo = makeDeskReceiptNo(id);
+    await updateDoc(
+      doc(db, ALUMNI_CONTACTS_COLLECTION, id),
+      withSession(
+        omitUndefined({
+          deskReceiptNo,
+          department: payload.department,
+          createdByUserId: payload.createdByUserId,
+          recordKind: EVENT_DESK_RECORD_KIND,
+          updatedAt: serverTimestamp(),
+        })
+      )
+    );
+    payload.deskReceiptNo = deskReceiptNo;
+  }
+  return { id, record: { ...payload, id } };
 }
 
 async function persistStaffCheckIn({ session, task, enrollments }) {
@@ -904,6 +1227,7 @@ export async function mountEventDesk(wrap, { session, notify, mode = "volunteer"
     lookup: [],
     selected: null,
     loading: true,
+    feeSettings: { feeAmount: 0 },
   };
 
   const isAdmin = mode === "admin";
@@ -920,6 +1244,12 @@ export async function mountEventDesk(wrap, { session, notify, mode = "volunteer"
     state.preRegs = preRegs || [];
     state.contacts = (contacts || []).filter((c) => !c._deleted && !c.invalidated);
     state.enrollments = enrollments || [];
+    try {
+      state.feeSettings = await loadRegistrationSettings();
+    } catch (err) {
+      console.error(err);
+      state.feeSettings = { feeAmount: 0 };
+    }
     let taskDocs = [];
     try {
       const taskSnap = await getDocs(collection(db, DEPT_TASKS_COLLECTION));
@@ -999,7 +1329,7 @@ export async function mountEventDesk(wrap, { session, notify, mode = "volunteer"
         <div class="er-panel" ${state.tab === "spot" ? "" : "hidden"}>
           <h3 class="er-subtitle">New walk-in alumni</h3>
           <form id="erSpotForm">
-            <div id="erSpotFields">${enrollmentFormHtml("erSpot", {}, { foodIssuedTotal: foodIssuedTotal(liveEnrollments), hillviewTotal: hillviewCount(liveEnrollments) })}</div>
+            <div id="erSpotFields">${enrollmentFormHtml("erSpot", {}, { foodIssuedTotal: foodIssuedTotal(liveEnrollments), hillviewTotal: hillviewCount(liveEnrollments), feeSettings: state.feeSettings })}</div>
             <div style="margin-top:1rem;">
               <button type="submit" class="btn btn--primary" ${canSave ? "" : "disabled"}>Save spot registration</button>
               ${canSave ? "" : `<p class="form-hint">Assigned Event Registration volunteers can save check-ins.</p>`}
@@ -1009,9 +1339,9 @@ export async function mountEventDesk(wrap, { session, notify, mode = "volunteer"
 
         <div class="er-panel" ${state.tab === "staff" ? "" : "hidden"}>
           <h3 class="er-subtitle">Past teachers, principal &amp; staff</h3>
-          <p class="form-hint">For people who served at GECI and are not alumni. Same food coupon, souvenir, and Hillview options as alumni.</p>
+          <p class="form-hint">For people who served at GECI and are not alumni. Food coupons, souvenirs, and the Hillview trip are not issued to former staff.</p>
           <form id="erStaffForm">
-            <div id="erStaffFields">${staffFormHtml("erStaff", {}, { foodIssuedTotal: foodIssuedTotal(liveEnrollments), hillviewTotal: hillviewCount(liveEnrollments) })}</div>
+            <div id="erStaffFields">${staffFormHtml("erStaff")}</div>
             <div style="margin-top:1rem;">
               <button type="submit" class="btn btn--primary" ${canSave ? "" : "disabled"}>Save staff registration</button>
               ${canSave ? "" : `<p class="form-hint">Assigned Event Registration volunteers can save check-ins.</p>`}
@@ -1021,11 +1351,11 @@ export async function mountEventDesk(wrap, { session, notify, mode = "volunteer"
 
         <div class="er-today">
           <h3 class="er-subtitle">Desk registrations ${deptFilter ? `(${escapeHtml(departmentLabel(deptFilter))})` : ""}</h3>
-          <p class="form-hint">${liveEnrollments.length} checked in · Food ${foodIssuedTotal(liveEnrollments)} · Souvenir ${liveEnrollments.filter((r) => r.souvenirIssued).length} · Hillview ${hillviewCount(liveEnrollments)}</p>
+          <p class="form-hint">${liveEnrollments.length} checked in · Food ${foodIssuedTotal(liveEnrollments.filter((r) => !isStaffCheckIn(r)))} · Souvenir ${liveEnrollments.filter((r) => !isStaffCheckIn(r) && r.souvenirIssued).length} · Hillview ${hillviewCount(liveEnrollments.filter((r) => !isStaffCheckIn(r)))} (${hillviewTransportCount(liveEnrollments, "college_bus")} bus / ${hillviewTransportCount(liveEnrollments, "own_vehicle")} own) · Fees ${liveEnrollments.filter(isDeskFeeReceived).length}</p>
           ${
             liveEnrollments.length
               ? `<div class="table-scroll"><table class="data-table">
-                  <thead><tr><th>Name</th><th>Dept</th><th>Contact</th><th>People</th><th>Issued</th></tr></thead>
+                  <thead><tr><th>Name</th><th>Dept</th><th>Contact</th><th>People</th><th>Issued</th><th>Fee</th></tr></thead>
                   <tbody>${liveEnrollments.map((r) => checkInRowHtml(r, { canEdit: canSave })).join("")}</tbody>
                 </table></div>`
               : `<p class="empty-state">No desk registrations yet.</p>`
@@ -1035,7 +1365,8 @@ export async function mountEventDesk(wrap, { session, notify, mode = "volunteer"
 
     bind();
     wireFoodCouponControls("erSpot");
-    wireFoodCouponControls("erStaff");
+    wireHillviewTransport("erSpot");
+    wireFeeControls("erSpot", state.feeSettings);
     if (state.selected) fillSelectedForm();
   }
 
@@ -1064,8 +1395,11 @@ export async function mountEventDesk(wrap, { session, notify, mode = "volunteer"
       lockedIdentity: false,
       foodIssuedTotal: foodIssuedTotal((state.enrollments || []).filter((r) => !isEventDeskTestRecord(r))),
       hillviewTotal: hillviewCount((state.enrollments || []).filter((r) => !isEventDeskTestRecord(r))),
+      feeSettings: state.feeSettings,
     });
     wireFoodCouponControls("erPre");
+    wireHillviewTransport("erPre");
+    wireFeeControls("erPre", state.feeSettings);
   }
 
   function bind() {
@@ -1104,7 +1438,7 @@ export async function mountEventDesk(wrap, { session, notify, mode = "volunteer"
       e.preventDefault();
       if (!state.selected) return;
       try {
-        await persistCheckIn({
+        const result = await persistCheckIn({
           session,
           task: state.task,
           source: state.selected.source,
@@ -1113,7 +1447,7 @@ export async function mountEventDesk(wrap, { session, notify, mode = "volunteer"
           existing: state.selected.existing,
           enrollments: state.enrollments,
         });
-        toast("Registration saved.", "success");
+        afterFeeSave(result, "erPre", toast, "Registration saved.");
         state.selected = null;
         await refreshLists();
         render();
@@ -1129,7 +1463,7 @@ export async function mountEventDesk(wrap, { session, notify, mode = "volunteer"
         const parsed = readEnrollmentForm("erSpot");
         if (parsed.errors.length) throw new Error(parsed.errors[0]);
         const existing = findExistingCheckIn(state.enrollments, parsed.data, { staff: false });
-        await persistCheckIn({
+        const result = await persistCheckIn({
           session,
           task: state.task,
           source: EVENT_REG_SOURCES.SPOT,
@@ -1138,7 +1472,7 @@ export async function mountEventDesk(wrap, { session, notify, mode = "volunteer"
           existing,
           enrollments: state.enrollments,
         });
-        toast(existing ? "Updated existing check-in." : "Spot registration saved.", "success");
+        afterFeeSave(result, "erSpot", toast, existing ? "Updated existing check-in." : "Spot registration saved.");
         await refreshLists();
         state.tab = "spot";
         render();
@@ -1184,24 +1518,17 @@ export async function mountEventDesk(wrap, { session, notify, mode = "volunteer"
       }
     });
 
-    wrap.querySelectorAll("[data-er-food], [data-er-souvenir], [data-er-hillview], [data-er-food-count]").forEach((input) => {
+    wrap.querySelectorAll("[data-er-food], [data-er-souvenir], [data-er-hillview], [data-er-food-count], [data-er-hillview-transport]").forEach((input) => {
       input.addEventListener("change", async () => {
-        const id = input.dataset.erFood || input.dataset.erSouvenir || input.dataset.erHillview || input.dataset.erFoodCount;
+        const id =
+          input.dataset.erFood ||
+          input.dataset.erSouvenir ||
+          input.dataset.erHillview ||
+          input.dataset.erFoodCount ||
+          input.dataset.erHillviewTransport;
         const row = state.enrollments.find((r) => r.id === id);
-        if (!row) return;
-        const foodEl = wrap.querySelector(`[data-er-food="${id}"]`);
-        const souvenirEl = wrap.querySelector(`[data-er-souvenir="${id}"]`);
-        const hillviewEl = wrap.querySelector(`[data-er-hillview="${id}"]`);
-        const countEl = wrap.querySelector(`[data-er-food-count="${id}"]`);
-        const issued = !!foodEl?.checked;
-        const foodCouponCount = normalizeFoodCouponCount(countEl?.value, {
-          issued,
-          membersAttending: row.membersAttending,
-        });
-        if (countEl) {
-          countEl.disabled = !issued;
-          countEl.value = String(foodCouponCount);
-        }
+        if (!row || isStaffCheckIn(row)) return;
+        const patch = readDeskIssueToggle(wrap, id, row);
         try {
           await updateDoc(
             doc(db, ALUMNI_CONTACTS_COLLECTION, id),
@@ -1209,28 +1536,24 @@ export async function mountEventDesk(wrap, { session, notify, mode = "volunteer"
               department: row.department,
               createdByUserId: row.createdByUserId,
               recordKind: EVENT_DESK_RECORD_KIND,
-              foodCouponIssued: issued,
-              foodCouponCount,
-              souvenirIssued: !!souvenirEl?.checked,
-              hillviewTrip: !!hillviewEl?.checked,
+              ...patch,
               updatedAt: serverTimestamp(),
             })
           );
-          row.foodCouponIssued = issued;
-          row.foodCouponCount = foodCouponCount;
-          row.souvenirIssued = !!souvenirEl?.checked;
-          row.hillviewTrip = !!hillviewEl?.checked;
+          Object.assign(row, patch);
           const live = (state.enrollments || []).filter((r) => !isEventDeskTestRecord(r));
-          const total = foodIssuedTotal(live);
+          const alumniLive = live.filter((r) => !isStaffCheckIn(r));
+          const total = foodIssuedTotal(alumniLive);
           const hint = wrap.querySelector(".er-today > .form-hint");
           if (hint) {
-            hint.textContent = `${live.length} checked in · Food ${total} · Souvenir ${live.filter((r) => r.souvenirIssued).length} · Hillview ${hillviewCount(live)}`;
+            const feeCount = live.filter(isDeskFeeReceived).length;
+            hint.textContent = `${live.length} checked in · Food ${total} · Souvenir ${alumniLive.filter((r) => r.souvenirIssued).length} · Hillview ${hillviewCount(alumniLive)} (${hillviewTransportCount(alumniLive, "college_bus")} bus / ${hillviewTransportCount(alumniLive, "own_vehicle")} own) · Fees ${feeCount}`;
           }
           wrap.querySelectorAll(".er-food-total strong").forEach((el) => {
             el.textContent = String(total);
           });
           wrap.querySelectorAll(".er-hillview-total strong").forEach((el) => {
-            el.textContent = String(hillviewCount(live));
+            el.textContent = String(hillviewCount(alumniLive));
           });
         } catch (err) {
           console.error(err);
@@ -1239,6 +1562,8 @@ export async function mountEventDesk(wrap, { session, notify, mode = "volunteer"
         }
       });
     });
+
+    bindDeskReceiptButtons(wrap, { enrollments: state.enrollments, toast });
   }
 
   function selectLookup(uid) {
@@ -1273,11 +1598,35 @@ export function summarizeEventDesk({ preRegs = [], contacts = [], enrollments = 
   const testCount = testRows.length;
   const testStaffCount = testRows.filter(isStaffCheckIn).length;
   enrollments = (enrollments || []).filter((r) => !isEventDeskTestRecord(r));
+  const alumni = enrollments.filter((r) => !isStaffCheckIn(r));
   const people = enrollments.reduce((n, r) => n + partySizeOf(r), 0);
-  const foodCheckIns = enrollments.filter((r) => r.foodCouponIssued).length;
-  const food = foodIssuedTotal(enrollments);
-  const souvenir = enrollments.filter((r) => r.souvenirIssued).length;
-  const hillview = hillviewCount(enrollments);
+  const alumniPeople = alumni.reduce((n, r) => n + partySizeOf(r), 0);
+  const food = foodIssuedTotal(alumni);
+  const souvenir = alumni.filter((r) => r.souvenirIssued).length;
+  const hillview = hillviewCount(alumni);
+  const hillviewOwn = hillviewTransportCount(alumni, "own_vehicle");
+  const hillviewBus = hillviewTransportCount(alumni, "college_bus");
+  const feeRows = enrollments.filter(isDeskFeeReceived);
+  const deskFeeCount = feeRows.length;
+  const deskFeeTotal = feeRows.reduce((n, r) => n + deskFeeAmountOf(r), 0);
+  const deskFeeCash = feeRows.filter((r) => String(r.deskFeeMode || "").toLowerCase() === "cash").length;
+  const deskFeeOnline = feeRows.filter((r) => {
+    const mode = String(r.deskFeeMode || "").toLowerCase();
+    return mode === "online" || mode === "upi" || mode === "bank" || mode === "card";
+  }).length;
+  const deskFeePendingVerify = feeRows.filter((r) => deskFeeLedgerStatus(r) === "pending").length;
+  const deskFeeVerified = feeRows.filter((r) => deskFeeLedgerStatus(r) === "verified").length;
+  const deskFeeMoved = feeRows.filter((r) => deskFeeLedgerStatus(r) === "moved").length;
+  const deskFeePendingTotal = feeRows
+    .filter((r) => deskFeeLedgerStatus(r) === "pending")
+    .reduce((n, r) => n + deskFeeAmountOf(r), 0);
+  const deskFeeVerifiedTotal = feeRows
+    .filter((r) => deskFeeLedgerStatus(r) === "verified")
+    .reduce((n, r) => n + deskFeeAmountOf(r), 0);
+  const deskFeeMovedTotal = feeRows
+    .filter((r) => deskFeeLedgerStatus(r) === "moved")
+    .reduce((n, r) => n + deskFeeAmountOf(r), 0);
+  const deskFeeUnmovedTotal = deskFeePendingTotal + deskFeeVerifiedTotal;
   const bySource = {
     google_form: enrollments.filter((r) => r.source === EVENT_REG_SOURCES.GOOGLE_FORM).length,
     alumni_connect: enrollments.filter((r) => r.source === EVENT_REG_SOURCES.ALUMNI_CONNECT).length,
@@ -1287,14 +1636,19 @@ export function summarizeEventDesk({ preRegs = [], contacts = [], enrollments = 
   const pendingForm = preRegs.filter((r) => !findExistingCheckIn(enrollments, r, { staff: false })).length;
 
   function deptStats(rows, code, label) {
+    const alumniRows = rows.filter((r) => !isStaffCheckIn(r));
     return {
       code,
       label,
       checkIns: rows.length,
       people: rows.reduce((n, r) => n + partySizeOf(r), 0),
-      food: foodIssuedTotal(rows),
-      souvenir: rows.filter((r) => r.souvenirIssued).length,
-      hillview: hillviewCount(rows),
+      food: foodIssuedTotal(alumniRows),
+      souvenir: alumniRows.filter((r) => r.souvenirIssued).length,
+      hillview: hillviewCount(alumniRows),
+      hillviewOwn: hillviewTransportCount(alumniRows, "own_vehicle"),
+      hillviewBus: hillviewTransportCount(alumniRows, "college_bus"),
+      fees: rows.filter(isDeskFeeReceived).length,
+      feeTotal: rows.filter(isDeskFeeReceived).reduce((n, r) => n + deskFeeAmountOf(r), 0),
       spot: rows.filter((r) => r.source === EVENT_REG_SOURCES.SPOT).length,
       form: rows.filter((r) => r.source === EVENT_REG_SOURCES.GOOGLE_FORM).length,
       connect: rows.filter((r) => r.source === EVENT_REG_SOURCES.ALUMNI_CONNECT).length,
@@ -1319,12 +1673,27 @@ export function summarizeEventDesk({ preRegs = [], contacts = [], enrollments = 
     connectCount: contacts.length,
     checkIns: enrollments.length,
     people,
+    alumniPeople,
+    alumniCheckIns: alumni.length,
     food,
     souvenir,
     hillview,
-    foodPending: Math.max(0, enrollments.length - foodCheckIns),
-    souvenirPending: Math.max(0, enrollments.length - souvenir),
-    hillviewPending: Math.max(0, enrollments.length - hillview),
+    hillviewOwn,
+    hillviewBus,
+    deskFeeCount,
+    deskFeeTotal,
+    deskFeeCash,
+    deskFeeOnline,
+    deskFeePendingVerify,
+    deskFeeVerified,
+    deskFeeMoved,
+    deskFeePendingTotal,
+    deskFeeVerifiedTotal,
+    deskFeeMovedTotal,
+    deskFeeUnmovedTotal,
+    foodPending: Math.max(0, alumniPeople - food),
+    souvenirPending: Math.max(0, alumni.length - souvenir),
+    hillviewPending: Math.max(0, alumni.length - hillview),
     pendingForm,
     arrivedForm: preRegs.length - pendingForm,
     bySource,
@@ -1569,13 +1938,13 @@ function erChartsHtml(stats) {
     );
   }
   if (stats.checkIns) {
-    const foodRemain = Math.max(0, stats.people - stats.food);
+    const foodRemain = Math.max(0, (stats.alumniPeople || stats.people) - stats.food);
     parts.push(
       erStackBarsHtml(
         [
           {
             label: "Food coupons",
-            summary: `${stats.food} / ${stats.people} people`,
+            summary: `${stats.food} / ${stats.alumniPeople || stats.people} people`,
             segments: [
               { label: "Issued", value: stats.food, color: ER_CHART_COLORS.issued },
               { label: "Remaining", value: foodRemain, color: ER_CHART_COLORS.pending },
@@ -1583,7 +1952,7 @@ function erChartsHtml(stats) {
           },
           {
             label: "Souvenirs",
-            summary: `${stats.souvenir} / ${stats.checkIns} check-ins`,
+            summary: `${stats.souvenir} / ${stats.alumniCheckIns || stats.checkIns} alumni`,
             segments: [
               { label: "Issued", value: stats.souvenir, color: ER_CHART_COLORS.issued },
               { label: "Pending", value: stats.souvenirPending, color: ER_CHART_COLORS.pending },
@@ -1591,16 +1960,17 @@ function erChartsHtml(stats) {
           },
           {
             label: "Hillview trip",
-            summary: `${stats.hillview} / ${stats.checkIns} joining`,
+            summary: `${stats.hillview} joining · ${stats.hillviewBus || 0} bus / ${stats.hillviewOwn || 0} own`,
             segments: [
-              { label: "Joining", value: stats.hillview, color: ER_CHART_COLORS.hillview },
+              { label: "College bus", value: stats.hillviewBus || 0, color: ER_CHART_COLORS.hillview },
+              { label: "Own vehicle", value: stats.hillviewOwn || 0, color: ER_CHART_COLORS.checkIn },
               { label: "Not joining", value: stats.hillviewPending, color: ER_CHART_COLORS.pending },
             ],
           },
         ],
         {
           title: "Coupons, souvenirs & Hillview",
-          caption: "Food is coupon count versus people on campus. Souvenir and Hillview are per alumni check-in.",
+          caption: "Food is coupon count versus alumni and family on campus. Souvenir and Hillview are per alumni check-in. Hillview travel is own vehicle or college bus. Former staff are not included.",
         }
       )
     );
@@ -1621,9 +1991,24 @@ function erStatCardsHtml(stats) {
     { label: "Alumni Connect pool", value: stats.connectCount, tone: "neutral" },
     { label: "Desk check-ins", value: stats.checkIns, tone: "good" },
     { label: "People on campus", value: stats.people, tone: "good" },
-    { label: "Food coupons issued", value: `${stats.food} / ${stats.people}`, tone: stats.food < stats.people ? "warn" : "good" },
-    { label: "Souvenirs issued", value: `${stats.souvenir} / ${stats.checkIns}`, tone: stats.souvenirPending ? "warn" : "good" },
-    { label: "Hillview trip", value: `${stats.hillview} / ${stats.checkIns}`, tone: stats.hillviewPending ? "warn" : "good" },
+    { label: "Food coupons issued", value: `${stats.food} / ${stats.alumniPeople || stats.people}`, tone: stats.food < (stats.alumniPeople || stats.people) ? "warn" : "good" },
+    { label: "Souvenirs issued", value: `${stats.souvenir} / ${stats.alumniCheckIns || stats.checkIns}`, tone: stats.souvenirPending ? "warn" : "good" },
+    { label: `Hillview trip · ${stats.hillviewBus || 0} college bus / ${stats.hillviewOwn || 0} own vehicle`, value: `${stats.hillview} / ${stats.alumniCheckIns || stats.checkIns}`, tone: stats.hillviewPending ? "warn" : "good" },
+    {
+      label: `Event Desk fees still off treasurer books · ${stats.deskFeeCash || 0} cash / ${stats.deskFeeOnline || 0} online`,
+      value: `${formatRupee(stats.deskFeeUnmovedTotal)} (${(stats.deskFeePendingVerify || 0) + (stats.deskFeeVerified || 0)})`,
+      tone: stats.deskFeeUnmovedTotal ? "warn" : "neutral",
+    },
+    {
+      label: "Awaiting admin verification",
+      value: `${formatRupee(stats.deskFeePendingTotal)} (${stats.deskFeePendingVerify || 0})`,
+      tone: stats.deskFeePendingVerify ? "warn" : "good",
+    },
+    {
+      label: "Moved to treasurer books",
+      value: `${formatRupee(stats.deskFeeMovedTotal)} (${stats.deskFeeMoved || 0})`,
+      tone: stats.deskFeeMoved ? "good" : "neutral",
+    },
     { label: "Spot registrations", value: stats.bySource.spot, tone: "neutral" },
     { label: "Former staff", value: stats.bySource.staff, tone: "neutral" },
     { label: "From Google Form", value: stats.bySource.google_form, tone: "neutral" },
@@ -1653,15 +2038,93 @@ function filterDeskRows(rows, { search = "", department = "", source = "", issue
     } else if (source && r.source !== source) return false;
     if (issue === "test" && !isEventDeskTestRecord(r)) return false;
     if (issue === "live" && isEventDeskTestRecord(r)) return false;
-    if (issue === "food" && !r.foodCouponIssued) return false;
-    if (issue === "food_pending" && r.foodCouponIssued) return false;
-    if (issue === "souvenir" && !r.souvenirIssued) return false;
-    if (issue === "souvenir_pending" && r.souvenirIssued) return false;
-    if (issue === "hillview" && !r.hillviewTrip) return false;
-    if (issue === "hillview_pending" && r.hillviewTrip) return false;
+    if (issue === "food" && (isStaffCheckIn(r) || !r.foodCouponIssued)) return false;
+    if (issue === "food_pending" && (isStaffCheckIn(r) || r.foodCouponIssued)) return false;
+    if (issue === "souvenir" && (isStaffCheckIn(r) || !r.souvenirIssued)) return false;
+    if (issue === "souvenir_pending" && (isStaffCheckIn(r) || r.souvenirIssued)) return false;
+    if (issue === "hillview" && (isStaffCheckIn(r) || !r.hillviewTrip)) return false;
+    if (issue === "hillview_pending" && (isStaffCheckIn(r) || r.hillviewTrip)) return false;
+    if (issue === "hillview_bus" && (isStaffCheckIn(r) || r.hillviewTransport !== "college_bus")) return false;
+    if (issue === "hillview_own" && (isStaffCheckIn(r) || r.hillviewTransport !== "own_vehicle")) return false;
+    if (issue === "fee_paid" && !isDeskFeeReceived(r)) return false;
+    if (issue === "fee_pending" && isDeskFeeReceived(r)) return false;
+    if (issue === "fee_verify_pending" && deskFeeLedgerStatus(r) !== "pending") return false;
+    if (issue === "fee_verified" && deskFeeLedgerStatus(r) !== "verified") return false;
+    if (issue === "fee_moved" && deskFeeLedgerStatus(r) !== "moved") return false;
     if (search && !matchesSearch(r, search)) return false;
     return true;
   });
+}
+
+function deskFeeLedgerHtml(state) {
+  const live = (state.enrollments || []).filter((r) => !isEventDeskTestRecord(r) && isDeskFeeReceived(r));
+  const queue = live.filter((r) => deskFeeLedgerStatus(r) !== "moved");
+  const moved = live.filter((r) => deskFeeLedgerStatus(r) === "moved");
+  const rowHtml = (r) => {
+    const match = findTreasurerContactForDeskFee(r, state.contacts || []);
+    const status = deskFeeLedgerStatus(r);
+    const matchNote = match
+      ? match.registrationStatus === "paid"
+        ? `Already paid in treasurer (${escapeHtml(match.alumniName || "alumni")}) — move will link only`
+        : `Will update Alumni Connect: ${escapeHtml(match.alumniName || "alumni")}`
+      : "No treasurer record yet — move will create a fee entry";
+    return `
+      <tr>
+        <td>
+          <strong>${escapeHtml(r.alumniName || "—")}</strong>
+          ${deskFeeStatusBadge(r)}
+          <br><small style="color:var(--slate-500)">${escapeHtml(sourceLabel(r.source))} · ${escapeHtml(departmentLabel(r.department))}${r.batch ? ` · ${escapeHtml(r.batch)}` : ""}</small>
+        </td>
+        <td>${escapeHtml(formatRupee(deskFeeAmountOf(r)))}<br><small>${escapeHtml(deskFeeModeLabel(r.deskFeeMode))}</small></td>
+        <td>${escapeHtml(r.deskReceiptNo || "—")}<br><small>${escapeHtml(r.deskFeeReceivedBy || r.createdByName || "—")}</small></td>
+        <td><small>${escapeHtml(matchNote)}</small></td>
+        <td>
+          <button type="button" class="btn btn--sm btn--ghost er-receipt-btn" data-er-receipt="${escapeHtml(r.id)}">Receipt</button>
+          ${
+            status === "pending"
+              ? `<button type="button" class="btn btn--sm btn--primary er-receipt-btn" data-er-fee-verify="${escapeHtml(r.id)}">Verify</button>`
+              : ""
+          }
+          ${
+            status === "verified"
+              ? `<button type="button" class="btn btn--sm btn--primary er-receipt-btn" data-er-fee-move="${escapeHtml(r.id)}">Move to treasurer</button>`
+              : ""
+          }
+        </td>
+      </tr>`;
+  };
+
+  return `
+    <div class="er-fee-ledger">
+      <h3 class="ac-dashboard__subtitle">Event Desk fees — verify, then move to treasurer</h3>
+      <p class="form-hint" style="margin-top:0;">
+        These amounts are <strong>not</strong> mixed with treasurer registration fees.
+        Verify a desk receipt first, then move it into treasurer books. Until then, Finance totals stay unchanged.
+      </p>
+      ${
+        queue.length
+          ? `<div class="table-scroll">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>Alumni</th>
+                    <th>Amount</th>
+                    <th>Receipt</th>
+                    <th>Treasurer match</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody>${queue.map(rowHtml).join("")}</tbody>
+              </table>
+            </div>`
+          : `<p class="empty-state">No Event Desk fees waiting for verification or transfer.</p>`
+      }
+      ${
+        moved.length
+          ? `<p class="form-hint">${moved.length} receipt${moved.length === 1 ? "" : "s"} already moved to treasurer (${escapeHtml(formatRupee(moved.reduce((n, r) => n + deskFeeAmountOf(r), 0)))}).</p>`
+          : ""
+      }
+    </div>`;
 }
 
 export async function mountAdminEventDesk(wrap, { session, notify } = {}) {
@@ -1676,6 +2139,7 @@ export async function mountAdminEventDesk(wrap, { session, notify } = {}) {
     department: "",
     source: "",
     issue: "",
+    feeSettings: { feeAmount: 0 },
   };
 
   async function refresh() {
@@ -1687,6 +2151,12 @@ export async function mountAdminEventDesk(wrap, { session, notify } = {}) {
     state.preRegs = preRegs || [];
     state.contacts = contacts || [];
     state.enrollments = enrollments || [];
+    try {
+      state.feeSettings = await loadRegistrationSettings();
+    } catch (err) {
+      console.error(err);
+      state.feeSettings = { feeAmount: 0 };
+    }
   }
 
   function render() {
@@ -1733,6 +2203,7 @@ export async function mountAdminEventDesk(wrap, { session, notify } = {}) {
                   <th>Food</th>
                   <th>Souvenir</th>
                   <th>Hillview</th>
+                  <th>Fees</th>
                   <th>Form</th>
                   <th>Connect</th>
                   <th>Spot</th>
@@ -1752,7 +2223,12 @@ export async function mountAdminEventDesk(wrap, { session, notify } = {}) {
                       <td>${r.people}</td>
                       <td>${r.food}</td>
                       <td>${r.souvenir}</td>
-                      <td>${r.hillview}</td>
+                      <td>${r.hillview}${
+                        r.hillview
+                          ? `<br><small>${r.hillviewBus || 0} bus · ${r.hillviewOwn || 0} own</small>`
+                          : ""
+                      }</td>
+                      <td>${r.fees ? `${formatRupee(r.feeTotal)} (${r.fees})` : "—"}</td>
                       <td>${r.form}</td>
                       <td>${r.connect}</td>
                       <td>${r.spot}</td>
@@ -1760,7 +2236,7 @@ export async function mountAdminEventDesk(wrap, { session, notify } = {}) {
                     </tr>`
                         )
                         .join("")
-                    : `<tr><td colspan="10" class="empty-state">No desk check-ins yet.</td></tr>`
+                    : `<tr><td colspan="11" class="empty-state">No desk check-ins yet.</td></tr>`
                 }
               </tbody>
             </table>
@@ -1804,6 +2280,8 @@ export async function mountAdminEventDesk(wrap, { session, notify } = {}) {
           </div>
         </div>
 
+        ${deskFeeLedgerHtml(state)}
+
         <div>
           <h3 class="ac-dashboard__subtitle">Check-in details</h3>
           <div class="form-row">
@@ -1844,10 +2322,17 @@ export async function mountAdminEventDesk(wrap, { session, notify } = {}) {
                 <option value="souvenir_pending" ${state.issue === "souvenir_pending" ? "selected" : ""}>Souvenir pending</option>
                 <option value="hillview" ${state.issue === "hillview" ? "selected" : ""}>Hillview joining</option>
                 <option value="hillview_pending" ${state.issue === "hillview_pending" ? "selected" : ""}>Hillview not joining</option>
+                <option value="hillview_bus" ${state.issue === "hillview_bus" ? "selected" : ""}>Hillview — college bus</option>
+                <option value="hillview_own" ${state.issue === "hillview_own" ? "selected" : ""}>Hillview — own vehicle</option>
+                <option value="fee_paid" ${state.issue === "fee_paid" ? "selected" : ""}>Fee received (desk)</option>
+                <option value="fee_pending" ${state.issue === "fee_pending" ? "selected" : ""}>Fee not collected</option>
+                <option value="fee_verify_pending" ${state.issue === "fee_verify_pending" ? "selected" : ""}>Fee awaiting verification</option>
+                <option value="fee_verified" ${state.issue === "fee_verified" ? "selected" : ""}>Fee verified, not moved</option>
+                <option value="fee_moved" ${state.issue === "fee_moved" ? "selected" : ""}>Fee in treasurer books</option>
               </select>
             </div>
           </div>
-          <p class="form-hint">Showing ${filtered.length} of ${state.enrollments.length} check-ins. Mark as test works for alumni and former staff. Test rows are treated as unregistered at the desk.</p>
+          <p class="form-hint">Showing ${filtered.length} of ${state.enrollments.length} check-ins. Event Desk fees stay off treasurer books until you verify and move them above.</p>
           <div class="table-scroll">
             <table class="data-table">
               <thead>
@@ -1859,6 +2344,7 @@ export async function mountAdminEventDesk(wrap, { session, notify } = {}) {
                   <th>Work</th>
                   <th>Source</th>
                   <th>Issued</th>
+                  <th>Fee</th>
                   <th>Test</th>
                   <th>By</th>
                 </tr>
@@ -1890,12 +2376,8 @@ export async function mountAdminEventDesk(wrap, { session, notify } = {}) {
                         : `${escapeHtml(r.company || "—")}${r.jobRole || r.jobSector ? `<br><small style="color:var(--slate-500)">${escapeHtml([r.jobRole, r.jobSector].filter(Boolean).join(" · "))}</small>` : ""}`
                     }</td>
                     <td>${escapeHtml(sourceLabel(r.source))}</td>
-                    <td>
-                      <label class="checkbox-label"><input type="checkbox" data-er-food="${escapeHtml(r.id)}" ${r.foodCouponIssued ? "checked" : ""}> Food</label>
-                      <input type="number" class="er-food-count-input" min="0" max="${MAX_MEMBERS_ATTENDING}" data-er-food-count="${escapeHtml(r.id)}" value="${escapeHtml(String(foodCouponCountOf(r)))}" ${r.foodCouponIssued ? "" : "disabled"} aria-label="Food coupons">
-                      <label class="checkbox-label"><input type="checkbox" data-er-souvenir="${escapeHtml(r.id)}" ${r.souvenirIssued ? "checked" : ""}> Souvenir</label>
-                      <label class="checkbox-label"><input type="checkbox" data-er-hillview="${escapeHtml(r.id)}" ${r.hillviewTrip ? "checked" : ""}> Hillview</label>
-                    </td>
+                    <td>${issuedControlsHtml(r)}</td>
+                    <td>${feeCellHtml(r, { admin: true })}</td>
                     <td>
                       <label class="checkbox-label"><input type="checkbox" data-er-test="${escapeHtml(r.id)}" ${isEventDeskTestRecord(r) ? "checked" : ""}> Mark as test</label>
                     </td>
@@ -1903,7 +2385,7 @@ export async function mountAdminEventDesk(wrap, { session, notify } = {}) {
                   </tr>`
                         )
                         .join("")
-                    : `<tr><td colspan="9" class="empty-state">No matching check-ins.</td></tr>`
+                    : `<tr><td colspan="10" class="empty-state">No matching check-ins.</td></tr>`
                 }
               </tbody>
             </table>
@@ -1953,20 +2435,17 @@ export async function mountAdminEventDesk(wrap, { session, notify } = {}) {
         toast(err.message || "Could not import the spreadsheet.", "error");
       }
     });
-    wrap.querySelectorAll("[data-er-food], [data-er-souvenir], [data-er-hillview], [data-er-food-count]").forEach((input) => {
+    wrap.querySelectorAll("[data-er-food], [data-er-souvenir], [data-er-hillview], [data-er-food-count], [data-er-hillview-transport]").forEach((input) => {
       input.addEventListener("change", async () => {
-        const id = input.dataset.erFood || input.dataset.erSouvenir || input.dataset.erHillview || input.dataset.erFoodCount;
+        const id =
+          input.dataset.erFood ||
+          input.dataset.erSouvenir ||
+          input.dataset.erHillview ||
+          input.dataset.erFoodCount ||
+          input.dataset.erHillviewTransport;
         const row = state.enrollments.find((r) => r.id === id);
-        if (!row) return;
-        const foodEl = wrap.querySelector(`[data-er-food="${id}"]`);
-        const souvenirEl = wrap.querySelector(`[data-er-souvenir="${id}"]`);
-        const hillviewEl = wrap.querySelector(`[data-er-hillview="${id}"]`);
-        const countEl = wrap.querySelector(`[data-er-food-count="${id}"]`);
-        const issued = !!foodEl?.checked;
-        const foodCouponCount = normalizeFoodCouponCount(countEl?.value, {
-          issued,
-          membersAttending: row.membersAttending,
-        });
+        if (!row || isStaffCheckIn(row)) return;
+        const patch = readDeskIssueToggle(wrap, id, row);
         try {
           await updateDoc(
             doc(db, ALUMNI_CONTACTS_COLLECTION, id),
@@ -1974,17 +2453,11 @@ export async function mountAdminEventDesk(wrap, { session, notify } = {}) {
               department: row.department,
               createdByUserId: row.createdByUserId,
               recordKind: EVENT_DESK_RECORD_KIND,
-              foodCouponIssued: issued,
-              foodCouponCount,
-              souvenirIssued: !!souvenirEl?.checked,
-              hillviewTrip: !!hillviewEl?.checked,
+              ...patch,
               updatedAt: serverTimestamp(),
             })
           );
-          row.foodCouponIssued = issued;
-          row.foodCouponCount = foodCouponCount;
-          row.souvenirIssued = !!souvenirEl?.checked;
-          row.hillviewTrip = !!hillviewEl?.checked;
+          Object.assign(row, patch);
           render();
         } catch (err) {
           console.error(err);
@@ -2029,6 +2502,85 @@ export async function mountAdminEventDesk(wrap, { session, notify } = {}) {
           console.error(err);
           toast("Could not update test flag.", "error");
           input.checked = !input.checked;
+        }
+      });
+    });
+
+    bindDeskReceiptButtons(wrap, { enrollments: state.enrollments, toast });
+
+    async function patchDeskLedger(row, patch) {
+      await updateDoc(
+        doc(db, ALUMNI_CONTACTS_COLLECTION, row.id),
+        withSession(
+          omitUndefined({
+            department: row.department,
+            createdByUserId: row.createdByUserId,
+            recordKind: EVENT_DESK_RECORD_KIND,
+            source: row.source,
+            guestKind: row.guestKind,
+            ...patch,
+            updatedAt: serverTimestamp(),
+          })
+        )
+      );
+      Object.assign(row, patch);
+    }
+
+    wrap.querySelectorAll("[data-er-fee-verify]").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const row = state.enrollments.find((r) => r.id === btn.dataset.erFeeVerify);
+        if (!row) return;
+        if (
+          !window.confirm(
+            `Verify the Event Desk receipt for ${row.alumniName || "this alumni"} (${formatRupee(deskFeeAmountOf(row))})?\n\nIt will still not appear in treasurer books until you move it.`
+          )
+        ) {
+          return;
+        }
+        try {
+          await patchDeskLedger(row, {
+            deskFeeVerified: true,
+            deskFeeVerifiedAt: todayISODate(),
+            deskFeeVerifiedBy: session.displayName || session.username,
+          });
+          toast("Verified. Move it to treasurer when you are ready.", "success");
+          render();
+        } catch (err) {
+          console.error(err);
+          toast(err.message || "Could not verify this fee.", "error");
+        }
+      });
+    });
+
+    wrap.querySelectorAll("[data-er-fee-move]").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const row = state.enrollments.find((r) => r.id === btn.dataset.erFeeMove);
+        if (!row) return;
+        const match = findTreasurerContactForDeskFee(row, state.contacts);
+        const prompt =
+          match?.registrationStatus === "paid"
+            ? `${row.alumniName || "This alumni"} is already marked paid in treasurer books. Link this Event Desk receipt without adding the amount again?`
+            : `Move the verified Event Desk fee for ${row.alumniName || "this alumni"} (${formatRupee(deskFeeAmountOf(row))}) into treasurer registration fees?\n\nThe Event Desk receipt stays on Event Desk.`;
+        if (!window.confirm(prompt)) return;
+        try {
+          const result = await copyDeskFeeIntoTreasurerBooks(row, state.contacts, state.feeSettings, session);
+          await patchDeskLedger(row, {
+            deskFeeTransferred: true,
+            deskFeeTransferredAt: todayISODate(),
+            deskFeeTransferredBy: session.displayName || session.username,
+            deskFeeTreasurerContactId: result.contactId,
+          });
+          await refresh();
+          toast(
+            result.linkedExistingPaid
+              ? "Linked to an existing treasurer payment. Amount was not added again."
+              : "Moved to treasurer books.",
+            "success"
+          );
+          render();
+        } catch (err) {
+          console.error(err);
+          toast(err.message || "Could not move this fee to treasurer.", "error");
         }
       });
     });

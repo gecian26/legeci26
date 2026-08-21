@@ -9,7 +9,7 @@ import {
   paymentModeLabel,
   summarizeRegistrationFees,
   contactFeeRemarks,
-} from "./legeci-accounts.js?v=fn3";
+} from "./legeci-accounts.js?v=fn4";
 
 const PDF = {
   navy: [18, 18, 42],

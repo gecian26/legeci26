@@ -76,14 +76,14 @@ import {
 import { downloadAlumniContactsPdf } from "../js/alumni-contacts-pdf.js";
 import { loadLeaderboardPanel } from "../js/leaderboard.js";
 import { mountVolunteerCertificates, isCertificateBatchRecord } from "../js/volunteer-certificates.js?v=th1";
-import { mountEventDesk, inferTaskTypeFromTitle } from "../js/event-registration.js?v=er19";
+import { mountEventDesk, inferTaskTypeFromTitle } from "../js/event-registration.js?v=er26";
 import {
   mountTreasurerAccounts,
   loadExpenses,
   summarizeAccounts,
   summarizeRegistrationFees,
   formatINR,
-} from "../js/legeci-accounts.js?v=fn3";
+} from "../js/legeci-accounts.js?v=fn4";
 
 const INSTITUTIONAL_ROLES = [
   ROLES.FACULTY,

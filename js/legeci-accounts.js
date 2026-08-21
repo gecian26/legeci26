@@ -23,6 +23,7 @@ import {
   formatDateShort,
   showToast,
   normalizeUsername,
+  isEventDeskRecord,
 } from "./constants.js";
 import {
   loadAllAlumniContacts,
@@ -35,6 +36,8 @@ import {
   contactMembersAttending,
   normalizeMembersAttending,
   membersFeeHintText,
+  normalizePhoneDigits,
+  normalizePersonName,
 } from "./alumni-connect.js";
 
 function todayISO() {
@@ -196,7 +199,7 @@ export function contactFeeAmount(contact, feeSettings) {
 }
 
 export function summarizeRegistrationFees(contacts, feeSettings) {
-  const list = contacts || [];
+  const list = (contacts || []).filter((c) => !isEventDeskRecord(c));
   const feeAmount = Number(feeSettings?.feeAmount) || 0;
   const paid = list.filter((c) => c.registrationStatus === "paid");
   const pending = list.filter((c) => c.registrationStatus === "pending_payment");
@@ -290,6 +293,137 @@ export async function saveManualRegistrationFee(data, feeSettings, session) {
   });
 }
 
+function deskModeToTreasurerMode(mode) {
+  const value = String(mode || "").toLowerCase();
+  if (value === "cash") return "cash";
+  if (value === "online" || value === "upi") return "upi";
+  if (value === "bank" || value === "card") return value;
+  return "other";
+}
+
+function treasurerUnitFromDeskFee(desk) {
+  const total = Math.max(0, Math.round(Number(desk?.deskFeeAmount) || 0));
+  const members = Math.max(1, Math.floor(Number(desk?.membersAttending) || 1));
+  if (members > 1 && total > 0 && total % members === 0) {
+    return { feeAmount: total / members, membersAttending: members, lineTotal: total };
+  }
+  return { feeAmount: total, membersAttending: 1, lineTotal: total };
+}
+
+export function findTreasurerContactForDeskFee(desk, contacts) {
+  const list = (contacts || []).filter((c) => !c._deleted && !c.invalidated && !isEventDeskRecord(c));
+  const linked = list.find((c) => c.deskFeeReceiptId && c.deskFeeReceiptId === desk?.id);
+  if (linked) return linked;
+  if (desk?.source === "alumni_connect" && desk.sourceId) {
+    const byId = list.find((c) => c.id === desk.sourceId);
+    if (byId) return byId;
+  }
+  const phone = normalizePhoneDigits(desk?.mobile || desk?.whatsapp);
+  if (phone) {
+    const byPhone = list.find((c) => normalizePhoneDigits(c.whatsapp || c.mobile) === phone);
+    if (byPhone) return byPhone;
+  }
+  const email = String(desk?.email || "")
+    .toLowerCase()
+    .trim();
+  const name = normalizePersonName(desk?.alumniName);
+  if (email && name) {
+    const byEmail = list.find(
+      (c) =>
+        String(c.email || "")
+          .toLowerCase()
+          .trim() === email && normalizePersonName(c.alumniName) === name
+    );
+    if (byEmail) return byEmail;
+  }
+  return null;
+}
+
+/**
+ * Copy a verified Event Desk receipt into treasurer registration fees.
+ * Leaves the Event Desk check-in unchanged — caller marks it transferred.
+ */
+export async function copyDeskFeeIntoTreasurerBooks(desk, contacts, feeSettings, session) {
+  if (!desk?.deskFeeReceived) throw new Error("No Event Desk fee to move.");
+  if (!desk.deskFeeVerified) throw new Error("Verify this Event Desk fee before moving it to treasurer.");
+  if (desk.deskFeeTransferred && desk.deskFeeTreasurerContactId) {
+    return { contactId: desk.deskFeeTreasurerContactId, alreadyMoved: true, linkedExistingPaid: false };
+  }
+
+  const match = findTreasurerContactForDeskFee(desk, contacts);
+  const mapped = treasurerUnitFromDeskFee(desk);
+  const mode = deskModeToTreasurerMode(desk.deskFeeMode);
+  const receiptBit = desk.deskReceiptNo || desk.id || "desk";
+  const remarks = [
+    `Event Desk receipt ${receiptBit}`,
+    String(desk.deskFeeMode || "").toLowerCase() === "cash" ? "Cash" : "Online",
+    desk.deskFeeReceivedBy ? `collected by ${desk.deskFeeReceivedBy}` : "",
+  ]
+    .filter(Boolean)
+    .join(" · ");
+
+  if (match?.registrationStatus === "paid") {
+    const extra = [
+      contactFeeRemarks(match),
+      remarks,
+      "Linked Event Desk receipt — already in treasurer books, amount not added again.",
+    ]
+      .filter(Boolean)
+      .join("\n");
+    await updateAlumniContact(match.id, {
+      feeRemarks: extra,
+      deskFeeReceiptId: desk.id,
+      deskFeeReceiptNo: desk.deskReceiptNo || "",
+    });
+    return { contactId: match.id, alreadyMoved: false, linkedExistingPaid: true };
+  }
+
+  if (match) {
+    await updateAlumniContact(match.id, {
+      registrationStatus: "paid",
+      feeAmount: mapped.feeAmount,
+      membersAttending: mapped.membersAttending,
+      feeCurrency: match.feeCurrency || feeSettings?.feeCurrency || "INR",
+      feeReceivedAt: desk.deskFeeReceivedAt || todayISO(),
+      feePaymentMode: mode,
+      feeReceivedBy: session?.displayName || session?.username || "Admin",
+      feeRemarks: [contactFeeRemarks(match), remarks].filter(Boolean).join("\n"),
+      deskFeeReceiptId: desk.id,
+      deskFeeReceiptNo: desk.deskReceiptNo || "",
+      feeOrigin: "event_desk",
+    });
+    return { contactId: match.id, alreadyMoved: false, linkedExistingPaid: false };
+  }
+
+  const ref = await saveManualRegistrationFee(
+    {
+      alumniName: desk.alumniName,
+      email: desk.email,
+      whatsapp: desk.whatsapp || desk.mobile,
+      mobile: desk.mobile,
+      batch: desk.batch,
+      department: desk.department,
+      feeAmount: mapped.feeAmount,
+      membersAttending: mapped.membersAttending,
+      feePaymentMode: mode,
+      feeReceivedAt: desk.deskFeeReceivedAt || todayISO(),
+      registrationStatus: "paid",
+      feeRemarks: remarks,
+    },
+    feeSettings,
+    session
+  );
+  await updateAlumniContact(ref.id, {
+    deskFeeReceiptId: desk.id,
+    deskFeeReceiptNo: desk.deskReceiptNo || "",
+    feeOrigin: "event_desk",
+    source: "event_desk_verified",
+    taskTitle: "Event Desk fee (verified)",
+    deptTaskId: "event_desk_fee",
+  });
+  return { contactId: ref.id, alreadyMoved: false, linkedExistingPaid: false, created: true };
+}
+
 function optionsHtml(options, selected = "") {
   return options
     .map(
@@ -342,7 +476,7 @@ export async function mountTreasurerAccounts(wrap, { toast, session, readOnly = 
               readOnly
                 ? "Registration fees and expense details across LEGECI (view only). Download Excel or a paid-alumni PDF from the buttons on the right."
                 : "Track expenses paid to coordinators and registration fees received from alumni. Download Excel or a paid-alumni PDF anytime."
-            }</p>
+            } Event Desk cash/online collections are <strong>not</strong> included until admin verifies them on Event Desk and moves them here.</p>
           </div>
           <div class="acct-hero__actions">
             <button type="button" class="btn btn--ghost btn--sm" data-acct-export="full">Download Excel report</button>
@@ -600,6 +734,7 @@ export async function mountTreasurerAccounts(wrap, { toast, session, readOnly = 
                           <strong>${escapeHtml(c.alumniName || "—")}</strong>
                           ${c.whatsapp || c.mobile ? `<br><small style="color:var(--slate-500)">${escapeHtml(c.whatsapp || c.mobile)}</small>` : ""}
                           ${c.batch ? `<br><small style="color:var(--slate-500)">Batch ${escapeHtml(c.batch)}</small>` : ""}
+                          ${c.feeOrigin === "event_desk" || c.source === "event_desk_verified" ? `<br><span class="badge badge--source-form">From Event Desk</span>` : ""}
                         </td>
                         <td>${escapeHtml(c.department || "—")}</td>
                         <td>${statusBadgeHtml("registration", c.registrationStatus || "not_registered")}</td>
@@ -926,7 +1061,7 @@ export async function mountTreasurerAccounts(wrap, { toast, session, readOnly = 
         const kind = pdfBtn.dataset.acctPdf || "paid";
         pdfBtn.disabled = true;
         try {
-          const { downloadFinanceAlumniPdf } = await import("./legeci-accounts-pdf.js?v=fn3");
+          const { downloadFinanceAlumniPdf } = await import("./legeci-accounts-pdf.js?v=fn4");
           await downloadFinanceAlumniPdf({
             kind,
             contacts,

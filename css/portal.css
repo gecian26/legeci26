@@ -2356,6 +2356,56 @@
   border: 1px solid var(--slate-200);
 }
 
+.er-fee-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.85rem 1.15rem;
+  margin-top: 0.75rem;
+  padding: 0.85rem 1rem;
+  background: #f0fdf4;
+  border-radius: 12px;
+  border: 1px dashed #86efac;
+}
+
+.er-fee-modes {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem 1rem;
+}
+
+.er-fee-ref input {
+  min-width: 8.5rem;
+}
+
+.er-fee-books-hint {
+  flex: 1 0 100%;
+  margin: 0;
+}
+
+.er-fee-ledger {
+  margin: 1.5rem 0;
+  padding: 1rem 1.1rem;
+  background: #fff7ed;
+  border: 1px solid #fdba74;
+  border-radius: 14px;
+}
+
+.er-fee-ledger .badge {
+  margin-left: 0.35rem;
+}
+
+.er-fee-empty {
+  color: var(--slate-500);
+  font-size: 0.85rem;
+}
+
+.er-receipt-btn {
+  margin-top: 0.35rem;
+  display: inline-flex;
+}
+
 .er-issue-food {
   display: flex;
   flex-wrap: wrap;
@@ -2384,6 +2434,25 @@
 
 .er-food-count input:disabled,
 .er-food-count-input:disabled {
+  background: var(--slate-100);
+  color: var(--slate-400);
+}
+
+.er-hillview-transport {
+  flex: 1 0 100%;
+}
+
+.er-hillview-transport-select {
+  min-width: 10.5rem;
+  margin-top: 0.25rem;
+  padding: 0.35rem 0.5rem;
+  font-size: 0.85rem;
+  border: 1.5px solid var(--slate-200);
+  border-radius: 8px;
+  background: var(--white);
+}
+
+.er-hillview-transport-select:disabled {
   background: var(--slate-100);
   color: var(--slate-400);
 }
