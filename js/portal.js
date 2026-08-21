@@ -83,7 +83,7 @@ import {
   summarizeAccounts,
   summarizeRegistrationFees,
   formatINR,
-} from "../js/legeci-accounts.js";
+} from "../js/legeci-accounts.js?v=fn1";
 
 const INSTITUTIONAL_ROLES = [
   ROLES.FACULTY,

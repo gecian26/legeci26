@@ -340,18 +340,19 @@ export async function mountTreasurerAccounts(wrap, { toast, session, readOnly = 
             <h2 class="acct-hero__title">${readOnly ? "Finance details" : "Money at a glance"}</h2>
             <p class="acct-hero__sub">${
               readOnly
-                ? "Registration fees and expense details across LEGECI (view only)."
-                : "Track expenses paid to coordinators and registration fees received from alumni."
+                ? "Registration fees and expense details across LEGECI (view only). Download an Excel report from the button on the right."
+                : "Track expenses paid to coordinators and registration fees received from alumni. Download an Excel report anytime."
             }</p>
           </div>
-          ${
-            readOnly
-              ? ""
-              : `<div class="acct-hero__actions">
-            <button type="button" class="btn btn--ghost btn--sm" data-acct-tab="fee-add">+ Add fee entry</button>
-            <button type="button" class="btn btn--primary btn--sm" data-acct-tab="expense">+ Add expense</button>
-          </div>`
-          }
+          <div class="acct-hero__actions">
+            <button type="button" class="btn btn--ghost btn--sm" data-acct-export="full">Download Excel report</button>
+            ${
+              readOnly
+                ? ""
+                : `<button type="button" class="btn btn--ghost btn--sm" data-acct-tab="fee-add">+ Add fee entry</button>
+            <button type="button" class="btn btn--primary btn--sm" data-acct-tab="expense">+ Add expense</button>`
+            }
+          </div>
         </div>
 
         <div class="acct-stat-grid">
@@ -551,6 +552,7 @@ export async function mountTreasurerAccounts(wrap, { toast, session, readOnly = 
           <div class="acct-fees__stats">
             <span><strong>${formatINR(fees.receivedTotal)}</strong> received (${fees.paidCount} · ${fees.paidMembers || 0} people)</span>
             <span><strong>${formatINR(fees.pendingTotal)}</strong> pending (${fees.pendingCount} · ${fees.pendingMembers || 0} people)</span>
+            <button type="button" class="btn btn--ghost btn--sm" data-acct-export="fees-view">Export this list</button>
             ${
               readOnly
                 ? ""
@@ -806,11 +808,26 @@ export async function mountTreasurerAccounts(wrap, { toast, session, readOnly = 
 
   function expensesListHtml(enriched) {
     if (!enriched.length) {
-      return readOnly
-        ? '<p class="empty-state">No expenses recorded yet.</p>'
-        : '<p class="empty-state">No expenses yet. <button type="button" class="btn btn--primary btn--sm" data-acct-tab="expense">Add first expense</button></p>';
+      return `
+        <div class="acct-fees">
+          <div class="acct-fees__head">
+            <p class="empty-state" style="margin:0;">${readOnly ? "No expenses recorded yet." : "No expenses yet."}</p>
+            <div style="display:flex;flex-wrap:wrap;gap:0.5rem;">
+              <button type="button" class="btn btn--ghost btn--sm" data-acct-export="expenses">Export expenses</button>
+              ${readOnly ? "" : `<button type="button" class="btn btn--primary btn--sm" data-acct-tab="expense">Add first expense</button>`}
+            </div>
+          </div>
+        </div>`;
     }
     return `
+      <div class="acct-fees">
+        <div class="acct-fees__head">
+          <div>
+            <h3 class="acct-card__title">All expenses</h3>
+            <p class="form-hint" style="margin:0;">${enriched.length} ${enriched.length === 1 ? "entry" : "entries"} · ${formatINR(enriched.reduce((s, e) => s + (Number(e.amount) || 0), 0))} total.</p>
+          </div>
+          <button type="button" class="btn btn--ghost btn--sm" data-acct-export="expenses">Export expenses</button>
+        </div>
       <div class="table-scroll">
         <table class="data-table">
           <thead>
@@ -861,6 +878,7 @@ export async function mountTreasurerAccounts(wrap, { toast, session, readOnly = 
               .join("")}
           </tbody>
         </table>
+      </div>
       </div>`;
   }
 
@@ -869,6 +887,37 @@ export async function mountTreasurerAccounts(wrap, { toast, session, readOnly = 
     bound = true;
 
     wrap.addEventListener("click", async (e) => {
+      const exportBtn = e.target.closest("[data-acct-export]");
+      if (exportBtn) {
+        const kind = exportBtn.dataset.acctExport || "full";
+        exportBtn.disabled = true;
+        try {
+          const { downloadFinanceExcel } = await import("./legeci-accounts-excel.js?v=fn1");
+          await downloadFinanceExcel({
+            kind,
+            contacts,
+            expenses,
+            feeSettings,
+            feeRows: kind === "fees-view" ? filteredFeeContacts() : null,
+            feeFilter,
+            generatedBy: session?.displayName || session?.username || "",
+          });
+          const done =
+            kind === "fees-view"
+              ? "Fee list downloaded."
+              : kind === "expenses"
+                ? "Expenses downloaded."
+                : "Finance report downloaded.";
+          showToast(toast, done, "success");
+        } catch (err) {
+          console.error(err);
+          showToast(toast, "Could not generate the Excel report.", "error");
+        } finally {
+          exportBtn.disabled = false;
+        }
+        return;
+      }
+
       const tabBtn = e.target.closest("[data-acct-tab]");
       if (tabBtn) {
         const next = tabBtn.dataset.acctTab;
