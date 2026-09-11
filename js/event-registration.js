@@ -19,6 +19,8 @@ import {
   EVENT_DESK_RECORD_KIND,
   isEventDeskRecord,
   isEventDeskTestRecord,
+  isEventDeskDisabledRecord,
+  isEventDeskInactiveRecord,
   EVENT_REG_SOURCES,
   EVENT_DESK_STAFF_DEPT,
   EVENT_STAFF_ROLES,
@@ -27,7 +29,7 @@ import {
   MAX_MEMBERS_ATTENDING,
   escapeHtml,
   normalizeUsername,
-} from "./constants.js?v=er25";
+} from "./constants.js?v=er27";
 import {
   jobSectorOptionsHtml,
   passoutYearSearchFieldHtml,
@@ -350,7 +352,7 @@ function todayISODate() {
 }
 
 function deskFeeLedgerStatus(row) {
-  if (!isDeskFeeReceived(row) || isEventDeskTestRecord(row)) return "none";
+  if (!isDeskFeeReceived(row) || isEventDeskInactiveRecord(row)) return "none";
   if (row.deskFeeTransferred) return "moved";
   if (row.deskFeeVerified) return "verified";
   return "pending";
@@ -849,7 +851,7 @@ function findExistingCheckIn(enrollments, candidate, { staff = null } = {}) {
     .trim();
   const name = normalizePersonName(candidate.alumniName);
   return enrollments.find((r) => {
-    if (isEventDeskTestRecord(r)) return false;
+    if (isEventDeskInactiveRecord(r)) return false;
     if (staff === true && !isStaffCheckIn(r)) return false;
     if (staff === false && isStaffCheckIn(r)) return false;
     const rPhone = normalizePhoneDigits(r.mobile || r.whatsapp);
@@ -859,8 +861,132 @@ function findExistingCheckIn(enrollments, candidate, { staff = null } = {}) {
     const rName = normalizePersonName(r.alumniName);
     if (phone && rPhone && phone === rPhone) return true;
     if (email && rEmail && email === rEmail && name && rName === name) return true;
+    const rDept = String(r.department || "").trim();
+    const rBatch = String(r.batch || "").trim();
+    const dept = String(candidate.department || "").trim();
+    const batch = String(candidate.batch || "").trim();
+    if (name && rName === name && dept && rDept === dept && batch && rBatch === batch) return true;
     return false;
   });
+}
+
+function createdAtMs(row) {
+  const value = row?.createdAt;
+  if (!value) return 0;
+  if (typeof value.toMillis === "function") return value.toMillis();
+  if (typeof value.seconds === "number") return value.seconds * 1000;
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function checkInIdentityKey(row) {
+  const staff = isStaffCheckIn(row) ? "1" : "0";
+  const phone = normalizePhoneDigits(row.mobile || row.whatsapp);
+  if (phone) return `p:${phone}|s:${staff}`;
+  const name = normalizePersonName(row.alumniName);
+  const dept = String(row.department || "").trim();
+  const batch = String(row.batch || "").trim();
+  if (name && dept) return `n:${name}|d:${dept}|b:${batch}|s:${staff}`;
+  if (name) return `n:${name}|s:${staff}`;
+  return "";
+}
+
+/** Extra live copies of the same person. The earliest check-in is kept. */
+function duplicateCheckInIds(enrollments) {
+  const groups = new Map();
+  (enrollments || []).forEach((row) => {
+    if (isEventDeskInactiveRecord(row)) return;
+    const key = checkInIdentityKey(row);
+    if (!key) return;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(row);
+  });
+  const extras = new Set();
+  const keepers = new Set();
+  groups.forEach((rows) => {
+    if (rows.length < 2) return;
+    rows.sort((a, b) => createdAtMs(a) - createdAtMs(b) || String(a.id).localeCompare(String(b.id)));
+    keepers.add(rows[0].id);
+    rows.slice(1).forEach((row) => extras.add(row.id));
+  });
+  return { extras, keepers };
+}
+
+
+export function registeredAlumniReportData(enrollments) {
+  const dup = duplicateCheckInIds(enrollments);
+  const excluded = { test: 0, disabled: 0, extras: 0, staff: 0 };
+  const rows = [];
+  (enrollments || []).forEach((row) => {
+    if (isEventDeskTestRecord(row)) {
+      excluded.test += 1;
+      return;
+    }
+    if (isEventDeskDisabledRecord(row)) {
+      excluded.disabled += 1;
+      return;
+    }
+    if (dup.extras.has(row.id)) {
+      excluded.extras += 1;
+      return;
+    }
+    if (isStaffCheckIn(row)) {
+      excluded.staff += 1;
+      return;
+    }
+    rows.push(row);
+  });
+  rows.sort((a, b) => {
+    const dept = departmentLabel(a.department).localeCompare(departmentLabel(b.department));
+    if (dept) return dept;
+    const year = String(b.batch || "").localeCompare(String(a.batch || ""), undefined, { numeric: true });
+    if (year) return year;
+    return String(a.alumniName || "").localeCompare(String(b.alumniName || ""));
+  });
+  const alumni = rows.map((r) => ({
+    id: r.id,
+    name: r.alumniName || "",
+    alumniName: r.alumniName || "",
+    department: r.department || "",
+    departmentLabel: departmentLabel(r.department),
+    batch: String(r.batch || "").trim() || "—",
+    phone: r.mobile || r.whatsapp || "",
+    whatsapp: r.whatsapp || r.mobile || "",
+    mobile: r.mobile || r.whatsapp || "",
+    email: r.email || "",
+    company: r.company || "",
+    jobSector: r.jobSector || "",
+    jobRole: r.jobRole || "",
+    address: r.address || "",
+    people: partySizeOf(r),
+    family: accompanyingOf(r),
+    source: sourceLabel(r.source),
+    food: foodCouponCountOf(r),
+    souvenir: r.souvenirIssued ? "Yes" : "No",
+    hillview: r.hillviewTrip ? hillviewTransportLabel(r.hillviewTransport) || "Yes" : "No",
+    fee: isDeskFeeReceived(r) ? deskFeeAmountOf(r) : 0,
+    feeMode: isDeskFeeReceived(r) ? deskFeeModeLabel(r.deskFeeMode) : "",
+    receipt: r.deskReceiptNo || "",
+    recordedBy: r.createdByName || r.createdByUserId || "",
+  }));
+  return { alumni, excluded };
+}
+
+const inflightCheckInKeys = new Set();
+
+function beginFormSave(form) {
+  if (!form || form.dataset.erBusy === "1") return null;
+  form.dataset.erBusy = "1";
+  const buttons = [...form.querySelectorAll('button[type="submit"]')];
+  buttons.forEach((button) => {
+    button.disabled = true;
+  });
+  return () => {
+    delete form.dataset.erBusy;
+    buttons.forEach((button) => {
+      button.disabled = false;
+    });
+  };
 }
 
 function findTestCheckIn(enrollments, candidate, { staff = null } = {}) {
@@ -1059,10 +1185,13 @@ function readDeskIssueToggle(wrap, id, row) {
   };
 }
 
-function checkInRowHtml(row, { canEdit = true } = {}) {
+function checkInRowHtml(row, { canEdit = true, dup = null } = {}) {
+  const extra = dup?.extras?.has(row.id);
   return `
-    <tr>
-      <td><strong>${escapeHtml(row.alumniName || "—")}</strong><br><small style="color:var(--slate-500)">${escapeHtml(sourceLabel(row.source))}${
+    <tr class="${extra ? "er-row--duplicate" : ""}">
+      <td><strong>${escapeHtml(row.alumniName || "—")}</strong>${
+        extra ? ` <span class="badge badge--status badge--status-orange">Duplicate</span>` : ""
+      }<br><small style="color:var(--slate-500)">${escapeHtml(sourceLabel(row.source))}${
         isStaffCheckIn(row) && row.staffRole ? ` · ${escapeHtml(staffRoleLabel(row.staffRole))}` : ""
       }</small></td>
       <td>${escapeHtml(departmentLabel(row.department))}${row.batch ? `<br><small>${escapeHtml(row.batch)}</small>` : ""}</td>
@@ -1122,6 +1251,15 @@ async function persistCheckIn({ session, task, source, sourceId, formPrefix, exi
   if (parsed.errors.length) {
     throw new Error(parsed.errors[0]);
   }
+  const live = existing?.id && !isEventDeskInactiveRecord(existing) ? existing : findExistingCheckIn(enrollments || [], parsed.data, { staff: false });
+  const testHit = findTestCheckIn(enrollments || [], parsed.data, { staff: false });
+  const row = live || testHit;
+  const key = checkInIdentityKey(parsed.data);
+  if (key && inflightCheckInKeys.has(key) && !row?.id) {
+    throw new Error("This person's check-in is already being saved. Wait a moment, then search again.");
+  }
+  if (key) inflightCheckInKeys.add(key);
+  try {
   const payload = {
     ...parsed.data,
     source,
@@ -1130,10 +1268,8 @@ async function persistCheckIn({ session, task, source, sourceId, formPrefix, exi
     taskTitle: task?.title || "Event Registration",
     volunteerDepartment: session.department || "",
     isTest: false,
+    isDisabled: false,
   };
-  const live = existing?.id && !isEventDeskTestRecord(existing) ? existing : findExistingCheckIn(enrollments || [], parsed.data, { staff: false });
-  const testHit = findTestCheckIn(enrollments || [], parsed.data, { staff: false });
-  const row = live || testHit;
   if (row?.id) {
     payload.id = row.id;
     if (row.createdByUserId) payload.createdByUserId = row.createdByUserId;
@@ -1184,6 +1320,9 @@ async function persistCheckIn({ session, task, source, sourceId, formPrefix, exi
     payload.deskReceiptNo = deskReceiptNo;
   }
   return { id, record: { ...payload, id } };
+  } finally {
+    if (key) inflightCheckInKeys.delete(key);
+  }
 }
 
 async function persistStaffCheckIn({ session, task, enrollments }) {
@@ -1191,25 +1330,37 @@ async function persistStaffCheckIn({ session, task, enrollments }) {
   if (parsed.errors.length) {
     throw new Error(parsed.errors[0]);
   }
-  const payload = {
-    ...parsed.data,
-    source: EVENT_REG_SOURCES.STAFF,
-    sourceId: "",
-    deptTaskId: task?.id || "",
-    taskTitle: task?.title || "Event Registration",
-    volunteerDepartment: session.department || "",
-    isTest: false,
-  };
   const live = findExistingCheckIn(enrollments || [], parsed.data, { staff: true });
   const testHit = findTestCheckIn(enrollments || [], parsed.data, { staff: true });
   const row = live || testHit;
-  if (row?.id) {
-    payload.id = row.id;
-  } else {
-    payload.createdByUserId = normalizeUsername(session.username);
-    payload.createdByName = session.displayName || session.username;
+  const key = checkInIdentityKey(parsed.data);
+  if (key && inflightCheckInKeys.has(key) && !row?.id) {
+    throw new Error("This person's check-in is already being saved. Wait a moment, then search again.");
   }
-  return saveCheckIn(payload);
+  if (key) inflightCheckInKeys.add(key);
+  try {
+    const payload = {
+      ...parsed.data,
+      source: EVENT_REG_SOURCES.STAFF,
+      sourceId: "",
+      deptTaskId: task?.id || "",
+      taskTitle: task?.title || "Event Registration",
+      volunteerDepartment: session.department || "",
+      isTest: false,
+      isDisabled: false,
+    };
+    if (row?.id) {
+      payload.id = row.id;
+      if (row.createdByUserId) payload.createdByUserId = row.createdByUserId;
+      if (row.createdByName) payload.createdByName = row.createdByName;
+    } else {
+      payload.createdByUserId = normalizeUsername(session.username);
+      payload.createdByName = session.displayName || session.username;
+    }
+    return await saveCheckIn(payload);
+  } finally {
+    if (key) inflightCheckInKeys.delete(key);
+  }
 }
 
 export async function mountEventDesk(wrap, { session, notify, mode = "volunteer" } = {}) {
@@ -1269,7 +1420,8 @@ export async function mountEventDesk(wrap, { session, notify, mode = "volunteer"
 
   function render() {
     const canSave = isAdmin || isFaculty || !!state.task;
-    const liveEnrollments = (state.enrollments || []).filter((r) => !isEventDeskTestRecord(r));
+    const liveEnrollments = (state.enrollments || []).filter((r) => !isEventDeskInactiveRecord(r));
+    const dup = duplicateCheckInIds(state.enrollments);
     const results = buildLookupList(state.preRegs, state.contacts, state.enrollments, state.query);
     state.lookup = results;
 
@@ -1356,7 +1508,7 @@ export async function mountEventDesk(wrap, { session, notify, mode = "volunteer"
             liveEnrollments.length
               ? `<div class="table-scroll"><table class="data-table">
                   <thead><tr><th>Name</th><th>Dept</th><th>Contact</th><th>People</th><th>Issued</th><th>Fee</th></tr></thead>
-                  <tbody>${liveEnrollments.map((r) => checkInRowHtml(r, { canEdit: canSave })).join("")}</tbody>
+                  <tbody>${liveEnrollments.map((r) => checkInRowHtml(r, { canEdit: canSave, dup })).join("")}</tbody>
                 </table></div>`
               : `<p class="empty-state">No desk registrations yet.</p>`
           }
@@ -1393,8 +1545,8 @@ export async function mountEventDesk(wrap, { session, notify, mode = "volunteer"
         };
     fields.innerHTML = enrollmentFormHtml("erPre", seed, {
       lockedIdentity: false,
-      foodIssuedTotal: foodIssuedTotal((state.enrollments || []).filter((r) => !isEventDeskTestRecord(r))),
-      hillviewTotal: hillviewCount((state.enrollments || []).filter((r) => !isEventDeskTestRecord(r))),
+      foodIssuedTotal: foodIssuedTotal((state.enrollments || []).filter((r) => !isEventDeskInactiveRecord(r))),
+      hillviewTotal: hillviewCount((state.enrollments || []).filter((r) => !isEventDeskInactiveRecord(r))),
       feeSettings: state.feeSettings,
     });
     wireFoodCouponControls("erPre");
@@ -1437,6 +1589,8 @@ export async function mountEventDesk(wrap, { session, notify, mode = "volunteer"
     wrap.querySelector("#erSearchForm")?.addEventListener("submit", async (e) => {
       e.preventDefault();
       if (!state.selected) return;
+      const done = beginFormSave(e.target);
+      if (!done) return;
       try {
         const result = await persistCheckIn({
           session,
@@ -1454,11 +1608,15 @@ export async function mountEventDesk(wrap, { session, notify, mode = "volunteer"
       } catch (err) {
         console.error(err);
         toast(err.message || "Could not save registration.", "error");
+      } finally {
+        done();
       }
     });
 
     wrap.querySelector("#erSpotForm")?.addEventListener("submit", async (e) => {
       e.preventDefault();
+      const done = beginFormSave(e.target);
+      if (!done) return;
       try {
         const parsed = readEnrollmentForm("erSpot");
         if (parsed.errors.length) throw new Error(parsed.errors[0]);
@@ -1479,11 +1637,15 @@ export async function mountEventDesk(wrap, { session, notify, mode = "volunteer"
       } catch (err) {
         console.error(err);
         toast(err.message || "Could not save spot registration.", "error");
+      } finally {
+        done();
       }
     });
 
     wrap.querySelector("#erStaffForm")?.addEventListener("submit", async (e) => {
       e.preventDefault();
+      const done = beginFormSave(e.target);
+      if (!done) return;
       try {
         const parsed = readStaffForm("erStaff", session);
         if (parsed.errors.length) throw new Error(parsed.errors[0]);
@@ -1500,6 +1662,8 @@ export async function mountEventDesk(wrap, { session, notify, mode = "volunteer"
       } catch (err) {
         console.error(err);
         toast(err.message || "Could not save staff registration.", "error");
+      } finally {
+        done();
       }
     });
 
@@ -1541,7 +1705,7 @@ export async function mountEventDesk(wrap, { session, notify, mode = "volunteer"
             })
           );
           Object.assign(row, patch);
-          const live = (state.enrollments || []).filter((r) => !isEventDeskTestRecord(r));
+          const live = (state.enrollments || []).filter((r) => !isEventDeskInactiveRecord(r));
           const alumniLive = live.filter((r) => !isStaffCheckIn(r));
           const total = foodIssuedTotal(alumniLive);
           const hint = wrap.querySelector(".er-today > .form-hint");
@@ -1597,7 +1761,9 @@ export function summarizeEventDesk({ preRegs = [], contacts = [], enrollments = 
   const testRows = (enrollments || []).filter(isEventDeskTestRecord);
   const testCount = testRows.length;
   const testStaffCount = testRows.filter(isStaffCheckIn).length;
-  enrollments = (enrollments || []).filter((r) => !isEventDeskTestRecord(r));
+  const disabledRows = (enrollments || []).filter(isEventDeskDisabledRecord);
+  const disabledCount = disabledRows.length;
+  enrollments = (enrollments || []).filter((r) => !isEventDeskInactiveRecord(r));
   const alumni = enrollments.filter((r) => !isStaffCheckIn(r));
   const people = enrollments.reduce((n, r) => n + partySizeOf(r), 0);
   const alumniPeople = alumni.reduce((n, r) => n + partySizeOf(r), 0);
@@ -1705,6 +1871,8 @@ export function summarizeEventDesk({ preRegs = [], contacts = [], enrollments = 
     volunteers: countBy(enrollments, (r) => r.createdByName || r.createdByUserId || "—"),
     testCount,
     testStaffCount,
+    disabledCount,
+    duplicateCount: duplicateCheckInIds(enrollments).extras.size,
   };
 }
 
@@ -2015,6 +2183,8 @@ function erStatCardsHtml(stats) {
     { label: "From Alumni Connect", value: stats.bySource.alumni_connect, tone: "neutral" },
     { label: "Form yet to arrive", value: stats.pendingForm, tone: stats.pendingForm ? "warn" : "good" },
     { label: "Test check-ins", value: stats.testStaffCount ? `${stats.testCount} (${stats.testStaffCount} staff)` : stats.testCount || 0, tone: stats.testCount ? "warn" : "neutral" },
+    { label: "Duplicate check-ins to disable", value: stats.duplicateCount || 0, tone: stats.duplicateCount ? "warn" : "good" },
+    { label: "Disabled copies", value: stats.disabledCount || 0, tone: stats.disabledCount ? "warn" : "neutral" },
   ];
   return `
     <div class="ac-stat-grid">
@@ -2030,14 +2200,16 @@ function erStatCardsHtml(stats) {
     </div>`;
 }
 
-function filterDeskRows(rows, { search = "", department = "", source = "", issue = "" } = {}) {
+function filterDeskRows(rows, { search = "", department = "", source = "", issue = "", duplicateIds = new Set() } = {}) {
   return (rows || []).filter((r) => {
     if (department && r.department !== department) return false;
     if (source === EVENT_REG_SOURCES.STAFF) {
       if (!isStaffCheckIn(r)) return false;
     } else if (source && r.source !== source) return false;
     if (issue === "test" && !isEventDeskTestRecord(r)) return false;
-    if (issue === "live" && isEventDeskTestRecord(r)) return false;
+    if (issue === "live" && isEventDeskInactiveRecord(r)) return false;
+    if (issue === "disabled" && !isEventDeskDisabledRecord(r)) return false;
+    if (issue === "duplicate" && !duplicateIds.has(r.id)) return false;
     if (issue === "food" && (isStaffCheckIn(r) || !r.foodCouponIssued)) return false;
     if (issue === "food_pending" && (isStaffCheckIn(r) || r.foodCouponIssued)) return false;
     if (issue === "souvenir" && (isStaffCheckIn(r) || !r.souvenirIssued)) return false;
@@ -2056,10 +2228,19 @@ function filterDeskRows(rows, { search = "", department = "", source = "", issue
   });
 }
 
+function deskCopyBadgeHtml(row, dup) {
+  if (isEventDeskDisabledRecord(row)) return `<span class="badge badge--source-spot">Disabled</span>`;
+  if (dup?.extras?.has(row.id)) return `<span class="badge badge--status badge--status-orange">Duplicate</span>`;
+  if (dup?.keepers?.has(row.id)) return `<span class="badge badge--status badge--status-green">Keep</span>`;
+  return "";
+}
+
 function deskFeeLedgerHtml(state) {
-  const live = (state.enrollments || []).filter((r) => !isEventDeskTestRecord(r) && isDeskFeeReceived(r));
+  const dup = duplicateCheckInIds(state.enrollments);
+  const live = (state.enrollments || []).filter((r) => !isEventDeskInactiveRecord(r) && isDeskFeeReceived(r));
   const queue = live.filter((r) => deskFeeLedgerStatus(r) !== "moved");
   const moved = live.filter((r) => deskFeeLedgerStatus(r) === "moved");
+  const extraCount = queue.filter((r) => dup.extras.has(r.id)).length;
   const rowHtml = (r) => {
     const match = findTreasurerContactForDeskFee(r, state.contacts || []);
     const status = deskFeeLedgerStatus(r);
@@ -2069,9 +2250,10 @@ function deskFeeLedgerHtml(state) {
         : `Will update Alumni Connect: ${escapeHtml(match.alumniName || "alumni")}`
       : "No treasurer record yet — move will create a fee entry";
     return `
-      <tr>
+      <tr class="${dup.extras.has(r.id) ? "er-row--duplicate" : ""}">
         <td>
           <strong>${escapeHtml(r.alumniName || "—")}</strong>
+          ${deskCopyBadgeHtml(r, dup)}
           ${deskFeeStatusBadge(r)}
           <br><small style="color:var(--slate-500)">${escapeHtml(sourceLabel(r.source))} · ${escapeHtml(departmentLabel(r.department))}${r.batch ? ` · ${escapeHtml(r.batch)}` : ""}</small>
         </td>
@@ -2081,12 +2263,17 @@ function deskFeeLedgerHtml(state) {
         <td>
           <button type="button" class="btn btn--sm btn--ghost er-receipt-btn" data-er-receipt="${escapeHtml(r.id)}">Receipt</button>
           ${
-            status === "pending"
+            dup.extras.has(r.id)
+              ? `<button type="button" class="btn btn--sm btn--ghost er-receipt-btn" data-er-disable="${escapeHtml(r.id)}">Disable copy</button>`
+              : ""
+          }
+          ${
+            status === "pending" && !dup.extras.has(r.id)
               ? `<button type="button" class="btn btn--sm btn--primary er-receipt-btn" data-er-fee-verify="${escapeHtml(r.id)}">Verify</button>`
               : ""
           }
           ${
-            status === "verified"
+            status === "verified" && !dup.extras.has(r.id)
               ? `<button type="button" class="btn btn--sm btn--primary er-receipt-btn" data-er-fee-move="${escapeHtml(r.id)}">Move to treasurer</button>`
               : ""
           }
@@ -2100,6 +2287,11 @@ function deskFeeLedgerHtml(state) {
       <p class="form-hint" style="margin-top:0;">
         These amounts are <strong>not</strong> mixed with treasurer registration fees.
         Verify a desk receipt first, then move it into treasurer books. Until then, Finance totals stay unchanged.
+        ${
+          extraCount
+            ? ` Duplicate receipts (${extraCount}) are tagged — disable the extra copies so fee totals count each person once.`
+            : ""
+        }
       </p>
       ${
         queue.length
@@ -2166,7 +2358,8 @@ export async function mountAdminEventDesk(wrap, { session, notify } = {}) {
         ? document.activeElement.selectionStart
         : null;
     const stats = summarizeEventDesk(state);
-    const filtered = filterDeskRows(state.enrollments, state);
+    const dup = duplicateCheckInIds(state.enrollments);
+    const filtered = filterDeskRows(state.enrollments, { ...state, duplicateIds: dup.extras });
     wrap.innerHTML = `
       <div class="er-admin">
         <div class="er-upload">
@@ -2280,6 +2473,22 @@ export async function mountAdminEventDesk(wrap, { session, notify } = {}) {
           </div>
         </div>
 
+        
+        <div class="er-report">
+          <div>
+            <h3 class="ac-dashboard__subtitle" style="margin:0;">Registered alumni report</h3>
+            <p class="form-hint" style="margin:0.35rem 0 0;">
+              Unique Event Desk check-ins after dropping test records, disabled copies, and duplicate extras.
+              Use the full PDF/Excel for counts, or <strong>PDF: branch + phone</strong> for a branch-wise name and contact list.
+            </p>
+          </div>
+          <div class="er-report__actions">
+            <button type="button" class="btn btn--primary btn--sm" data-er-report="pdf">Download PDF</button>
+            <button type="button" class="btn btn--ghost btn--sm" data-er-report="branch">PDF: branch + phone</button>
+            <button type="button" class="btn btn--ghost btn--sm" data-er-report="xlsx">Download Excel</button>
+          </div>
+        </div>
+
         ${deskFeeLedgerHtml(state)}
 
         <div>
@@ -2315,6 +2524,8 @@ export async function mountAdminEventDesk(wrap, { session, notify } = {}) {
               <select id="erAdmIssue">
                 <option value="">All</option>
                 <option value="live" ${state.issue === "live" ? "selected" : ""}>Live check-ins</option>
+                <option value="duplicate" ${state.issue === "duplicate" ? "selected" : ""}>Duplicate check-ins</option>
+                <option value="disabled" ${state.issue === "disabled" ? "selected" : ""}>Disabled copies</option>
                 <option value="test" ${state.issue === "test" ? "selected" : ""}>Test only</option>
                 <option value="food" ${state.issue === "food" ? "selected" : ""}>Food issued</option>
                 <option value="food_pending" ${state.issue === "food_pending" ? "selected" : ""}>Food pending</option>
@@ -2332,7 +2543,11 @@ export async function mountAdminEventDesk(wrap, { session, notify } = {}) {
               </select>
             </div>
           </div>
-          <p class="form-hint">Showing ${filtered.length} of ${state.enrollments.length} check-ins. Event Desk fees stay off treasurer books until you verify and move them above.</p>
+          <p class="form-hint">Showing ${filtered.length} of ${state.enrollments.length} check-ins. Event Desk fees stay off treasurer books until you verify and move them above.${
+            stats.duplicateCount
+              ? ` ${stats.duplicateCount} extra cop${stats.duplicateCount === 1 ? "y is" : "ies are"} tagged Duplicate — disable them so people, food, Hillview, and fee totals count each person once.`
+              : ""
+          }</p>
           <div class="table-scroll">
             <table class="data-table">
               <thead>
@@ -2345,7 +2560,7 @@ export async function mountAdminEventDesk(wrap, { session, notify } = {}) {
                   <th>Source</th>
                   <th>Issued</th>
                   <th>Fee</th>
-                  <th>Test</th>
+                  <th>Flags</th>
                   <th>By</th>
                 </tr>
               </thead>
@@ -2354,11 +2569,17 @@ export async function mountAdminEventDesk(wrap, { session, notify } = {}) {
                   filtered.length
                     ? filtered
                         .map(
-                          (r) => `
-                  <tr class="${isEventDeskTestRecord(r) ? "er-row--test" : ""}">
+                          (r) => {
+                            const test = isEventDeskTestRecord(r);
+                            const disabled = isEventDeskDisabledRecord(r);
+                            const extra = dup.extras.has(r.id);
+                            const rowClass = extra ? "er-row--duplicate" : disabled ? "er-row--disabled" : test ? "er-row--test" : "";
+                            return `
+                  <tr class="${rowClass}">
                     <td>
                       <strong>${escapeHtml(r.alumniName || "—")}</strong>
-                      ${isEventDeskTestRecord(r) ? ` <span class="badge ${isStaffCheckIn(r) ? "badge--source-staff" : "badge--source-spot"}">Test</span>` : ""}
+                      ${deskCopyBadgeHtml(r, dup)}
+                      ${test ? ` <span class="badge ${isStaffCheckIn(r) ? "badge--source-staff" : "badge--source-spot"}">Test</span>` : ""}
                       ${r.address ? `<br><small style="color:var(--slate-500)">${escapeHtml(r.address)}</small>` : ""}
                     </td>
                     <td>${escapeHtml(departmentLabel(r.department))}${
@@ -2379,10 +2600,12 @@ export async function mountAdminEventDesk(wrap, { session, notify } = {}) {
                     <td>${issuedControlsHtml(r)}</td>
                     <td>${feeCellHtml(r, { admin: true })}</td>
                     <td>
-                      <label class="checkbox-label"><input type="checkbox" data-er-test="${escapeHtml(r.id)}" ${isEventDeskTestRecord(r) ? "checked" : ""}> Mark as test</label>
+                      <label class="checkbox-label"><input type="checkbox" data-er-disable="${escapeHtml(r.id)}" ${disabled ? "checked" : ""}> Disable copy</label>
+                      <label class="checkbox-label"><input type="checkbox" data-er-test="${escapeHtml(r.id)}" ${test ? "checked" : ""}> Mark as test</label>
                     </td>
                     <td>${escapeHtml(r.createdByName || r.createdByUserId || "—")}</td>
-                  </tr>`
+                  </tr>`;
+                          }
                         )
                         .join("")
                     : `<tr><td colspan="10" class="empty-state">No matching check-ins.</td></tr>`
@@ -2421,6 +2644,39 @@ export async function mountAdminEventDesk(wrap, { session, notify } = {}) {
       state.issue = e.target.value;
       render();
     });
+    
+    wrap.querySelectorAll("[data-er-report]").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const kind = btn.dataset.erReport;
+        btn.disabled = true;
+        try {
+          const payload = registeredAlumniReportData(state.enrollments);
+          const generatedBy = session.displayName || session.username || "";
+          const mod = await import("./event-desk-registered-report.js?v=er29");
+          if (kind === "pdf") {
+            await mod.downloadRegisteredAlumniPdf({ ...payload, generatedBy });
+          } else if (kind === "branch") {
+            await mod.downloadRegisteredAlumniBranchPdf({ ...payload, generatedBy });
+          } else {
+            await mod.downloadRegisteredAlumniExcel({ ...payload, generatedBy });
+          }
+          toast(
+            kind === "pdf"
+              ? "Registered alumni PDF downloaded."
+              : kind === "branch"
+                ? "Branch-wise contacts PDF downloaded."
+                : "Registered alumni Excel downloaded.",
+            "success"
+          );
+        } catch (err) {
+          console.error(err);
+          toast(err.message || "Could not generate the registered alumni report.", "error");
+        } finally {
+          btn.disabled = false;
+        }
+      });
+    });
+
     wrap.querySelector("#erExcel")?.addEventListener("change", async (e) => {
       const file = e.target.files?.[0];
       if (!file) return;
@@ -2504,6 +2760,54 @@ export async function mountAdminEventDesk(wrap, { session, notify } = {}) {
           input.checked = !input.checked;
         }
       });
+    });
+
+    async function setDisabledFlag(row, isDisabled) {
+      await updateDoc(
+        doc(db, ALUMNI_CONTACTS_COLLECTION, row.id),
+        withSession(
+          omitUndefined({
+            department: row.department || (isStaffCheckIn(row) ? EVENT_DESK_STAFF_DEPT : ""),
+            createdByUserId: row.createdByUserId,
+            recordKind: EVENT_DESK_RECORD_KIND,
+            source: row.source,
+            guestKind: row.guestKind || (isStaffCheckIn(row) ? "staff" : "alumni"),
+            staffRole: row.staffRole,
+            yearsServed: row.yearsServed,
+            isDisabled,
+            updatedAt: serverTimestamp(),
+          })
+        )
+      );
+      row.isDisabled = isDisabled;
+    }
+
+    wrap.querySelectorAll("[data-er-disable]").forEach((el) => {
+      const run = async () => {
+        const id = el.dataset.erDisable;
+        const row = state.enrollments.find((r) => r.id === id);
+        if (!row) return;
+        const isDisabled = el.type === "checkbox" ? !!el.checked : true;
+        el.disabled = true;
+        try {
+          await setDisabledFlag(row, isDisabled);
+          const who = row.alumniName || (isStaffCheckIn(row) ? "Former staff" : "Alumni");
+          toast(
+            isDisabled
+              ? `${who} disabled. Live counts no longer include this copy.`
+              : `${who} re-enabled as a live check-in.`,
+            "success"
+          );
+          render();
+        } catch (err) {
+          console.error(err);
+          toast("Could not update the disabled flag.", "error");
+          if (el.type === "checkbox") el.checked = !el.checked;
+        } finally {
+          el.disabled = false;
+        }
+      };
+      el.addEventListener(el.type === "checkbox" ? "change" : "click", run);
     });
 
     bindDeskReceiptButtons(wrap, { enrollments: state.enrollments, toast });

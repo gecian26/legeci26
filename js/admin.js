@@ -52,7 +52,8 @@ import {
   formatFee,
   statusBadgeHtml,
 } from "../js/alumni-connect.js?v=er2";
-import { mountAdminEventDesk } from "../js/event-registration.js?v=er26";
+import { mountAdminEventDesk } from "../js/event-registration.js?v=er30";
+import { mountAdminAlumniNetwork } from "../js/alumni-network.js?v=er30";
 import { loadLeaderboardPanel } from "../js/leaderboard.js";
 import { downloadAlumniContactsPdf } from "../js/alumni-contacts-pdf.js";
 import {
@@ -142,6 +143,7 @@ function setupNavigation() {
     tasks: "Tasks",
     alumni: "Alumni Connect",
     eventdesk: "Event Desk",
+    network: "Alumni Network",
     leaderboard: "Leaderboard",
     account: "Account",
   };
@@ -160,6 +162,9 @@ function setupNavigation() {
       }
       if (panel === "eventdesk") {
         loadAdminEventDesk();
+      }
+      if (panel === "network") {
+        loadAdminAlumniNetwork();
       }
       if (panel === "leaderboard") {
         loadAdminLeaderboard();
@@ -1196,6 +1201,15 @@ async function loadAdminEventDesk() {
   const wrap = document.getElementById("adminEventDeskWrap");
   if (!wrap || !currentAdminSession) return;
   await mountAdminEventDesk(wrap, {
+    session: currentAdminSession,
+    notify: (message, type) => showToast(toast, message, type),
+  });
+}
+
+async function loadAdminAlumniNetwork() {
+  const wrap = document.getElementById("adminAlumniNetworkWrap");
+  if (!wrap || !currentAdminSession) return;
+  await mountAdminAlumniNetwork(wrap, {
     session: currentAdminSession,
     notify: (message, type) => showToast(toast, message, type),
   });

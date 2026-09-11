@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="../css/styles.css">
-  <link rel="stylesheet" href="../css/portal.css?v=er25">
+  <link rel="stylesheet" href="../css/portal.css?v=er30">
 </head>
 <body class="portal-body">
   <div class="portal-layout">
@@ -31,6 +31,7 @@
         <li><button class="portal-nav__link" data-panel="tasks">Tasks</button></li>
         <li><button class="portal-nav__link" data-panel="alumni">Alumni Connect</button></li>
         <li><button class="portal-nav__link" data-panel="eventdesk">Event Desk</button></li>
+        <li><button class="portal-nav__link" data-panel="network">Alumni Network</button></li>
         <li><button class="portal-nav__link" data-panel="leaderboard">Leaderboard</button></li>
         <li><button class="portal-nav__link" data-panel="account">Account</button></li>
       </ul>
@@ -385,6 +386,17 @@
         </div>
       </section>
 
+      <section class="portal-panel" id="panel-network">
+        <div class="portal-card">
+          <h2 class="portal-card__title">Alumni Network</h2>
+          <p class="form-hint" style="margin-bottom:1rem;">
+            Start from LEGECI26 Event Desk registrations, add more alumni through those contacts,
+            and coordinate technical talks, experience sharing, funding, and sponsorship.
+          </p>
+          <div id="adminAlumniNetworkWrap"><p class="empty-state">Loading...</p></div>
+        </div>
+      </section>
+
       <!-- Leaderboard -->
       <section class="portal-panel" id="panel-leaderboard">
         <div class="portal-card" style="padding:0;overflow:hidden;border:none;background:transparent;box-shadow:none;">
@@ -400,6 +412,6 @@
   </div>
 
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
-  <script type="module" src="../js/admin.js?v=er26"></script>
+    <script type="module" src="../js/admin.js?v=er30"></script>
 </body>
 </html>

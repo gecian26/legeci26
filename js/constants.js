@@ -85,6 +85,63 @@ export function isEventDeskTestRecord(record) {
   return record?.isTest === true;
 }
 
+/** Duplicate or void Event Desk check-ins — kept on file but excluded from live counts. */
+export function isEventDeskDisabledRecord(record) {
+  return record?.isDisabled === true;
+}
+
+export function isEventDeskInactiveRecord(record) {
+  return isEventDeskTestRecord(record) || isEventDeskDisabledRecord(record);
+}
+
+/** Post-LEGECI alumni network (separate from Connect outreach and Event Desk) */
+export const ALUMNI_NETWORK_COLLECTION = "alumni_network";
+/** Talks, sharing, funding, and sponsorship coordinated through the network */
+export const ALUMNI_PROGRAMS_COLLECTION = "alumni_programs";
+
+export const NETWORK_ORIGIN_KINDS = [
+  { value: "event_desk", label: "LEGECI26 Event Desk" },
+  { value: "alumni_connect", label: "Alumni Connect" },
+  { value: "manual", label: "Added directly" },
+];
+
+export const NETWORK_CONNECT_STATUS = [
+  { value: "not_contacted", label: "Not contacted" },
+  { value: "contacted", label: "Contacted" },
+  { value: "responded", label: "Responded" },
+  { value: "follow_up", label: "Follow up" },
+  { value: "no_response", label: "No response" },
+  { value: "declined", label: "Declined" },
+];
+
+export const NETWORK_ACTIVITY_WILLINGNESS = [
+  { value: "willing", label: "Willing" },
+  { value: "undecided", label: "Maybe" },
+  { value: "not_willing", label: "Not willing" },
+  { value: "no_response", label: "No reply" },
+];
+
+export const NETWORK_ACTIVITY_FIELDS = [
+  { key: "talkWillingness", short: "Talks", label: "Technical talks" },
+  { key: "shareWillingness", short: "Sharing", label: "Experience sharing" },
+  { key: "fundingWillingness", short: "Funding", label: "Funding" },
+  { key: "sponsorWillingness", short: "Sponsor", label: "Sponsorship" },
+];
+
+export const PROGRAM_KINDS = [
+  { value: "technical_talk", label: "Technical talk" },
+  { value: "experience_sharing", label: "Experience sharing" },
+  { value: "funding", label: "Funding" },
+  { value: "sponsorship", label: "Sponsorship" },
+];
+
+export const PROGRAM_STATUS = [
+  { value: "planned", label: "Planned" },
+  { value: "confirmed", label: "Confirmed" },
+  { value: "completed", label: "Completed" },
+  { value: "cancelled", label: "Cancelled" },
+];
+
 /** LEGECI treasurer accounting */
 export const LEGECI_EXPENSES_COLLECTION = "legeci_expenses";
 export const LEGECI_SETTLEMENTS_COLLECTION = "legeci_settlements";

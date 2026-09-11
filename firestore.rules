@@ -200,5 +200,21 @@ service cloud.firestore {
       allow update: if isAccountsWriter(request.resource.data._sessionId);
       allow delete: if false;
     }
+
+    match /alumni_network/{contactId} {
+      allow read: if true;
+      allow create: if isAdminSession(request.resource.data._sessionId)
+                    && request.resource.data.keys().hasAll(['alumniName']);
+      allow update: if isAdminSession(request.resource.data._sessionId);
+      allow delete: if false;
+    }
+
+    match /alumni_programs/{programId} {
+      allow read: if true;
+      allow create: if isAdminSession(request.resource.data._sessionId)
+                    && request.resource.data.keys().hasAll(['kind', 'title']);
+      allow update: if isAdminSession(request.resource.data._sessionId);
+      allow delete: if false;
+    }
   }
 }
