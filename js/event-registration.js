@@ -26,10 +26,11 @@ import {
   EVENT_STAFF_ROLES,
   HILLVIEW_TRANSPORT,
   DEPARTMENTS,
+  JOB_SECTORS,
   MAX_MEMBERS_ATTENDING,
   escapeHtml,
   normalizeUsername,
-} from "./constants.js?v=er27";
+} from "./constants.js?v=er31";
 import {
   jobSectorOptionsHtml,
   passoutYearSearchFieldHtml,
@@ -970,6 +971,208 @@ export function registeredAlumniReportData(enrollments) {
     recordedBy: r.createdByName || r.createdByUserId || "",
   }));
   return { alumni, excluded };
+}
+
+const REPORT_BLANK = "__blank__";
+
+function isReportBlank(value) {
+  const text = String(value || "").trim();
+  return !text || text === "—";
+}
+
+function uniqueReportValues(alumni, getter) {
+  const set = new Set();
+  (alumni || []).forEach((row) => {
+    const value = String(getter(row) || "").trim();
+    if (value && value !== "—") set.add(value);
+  });
+  return [...set].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+}
+
+function matchReportFilter(value, selected) {
+  if (!selected) return true;
+  if (selected === REPORT_BLANK) return isReportBlank(value);
+  return String(value || "").trim() === String(selected).trim();
+}
+
+export function emptyRegisteredAlumniReportFilters() {
+  return {
+    search: "",
+    department: "",
+    batch: "",
+    jobSector: "",
+    company: "",
+    jobRole: "",
+  };
+}
+
+/** AND-combination filters for the unique registered-alumni report. */
+export function filterRegisteredAlumniReport(alumni, filters = {}) {
+  const q = String(filters.search || "").trim().toLowerCase();
+  return (alumni || []).filter((row) => {
+    if (!matchReportFilter(row.department, filters.department)) return false;
+    if (!matchReportFilter(String(row.batch || "").replace("—", "").trim(), filters.batch)) return false;
+    if (!matchReportFilter(row.jobSector, filters.jobSector)) return false;
+    if (!matchReportFilter(row.company, filters.company)) return false;
+    if (!matchReportFilter(row.jobRole, filters.jobRole)) return false;
+    if (q) {
+      const hay = [
+        row.name,
+        row.alumniName,
+        row.phone,
+        row.email,
+        row.company,
+        row.jobRole,
+        row.jobSector,
+        row.departmentLabel,
+        row.department,
+        row.batch,
+      ]
+        .join(" ")
+        .toLowerCase();
+      if (!hay.includes(q)) return false;
+    }
+    return true;
+  });
+}
+
+export function registeredAlumniReportFilterNote(filters = {}) {
+  const f = filters || {};
+  const parts = [];
+  if (f.search) parts.push(`Search “${String(f.search).trim()}”`);
+  if (f.department) {
+    parts.push(`Branch ${DEPARTMENTS.find((d) => d.value === f.department)?.label || f.department}`);
+  }
+  if (f.batch) parts.push(`Passout ${f.batch}`);
+  if (f.jobSector === REPORT_BLANK) parts.push("Job category not recorded");
+  else if (f.jobSector) parts.push(`Job category ${f.jobSector}`);
+  if (f.company === REPORT_BLANK) parts.push("Company not recorded");
+  else if (f.company) parts.push(`Company ${f.company}`);
+  if (f.jobRole === REPORT_BLANK) parts.push("Job / role not recorded");
+  else if (f.jobRole) parts.push(`Job ${f.jobRole}`);
+  return parts.length ? `Filters: ${parts.join(" · ")}` : "";
+}
+
+function reportFilterOptionsHtml(values, selected, { includeBlank = true, blankLabel = "Not recorded" } = {}) {
+  return (
+    `<option value="">All</option>` +
+    (includeBlank
+      ? `<option value="${REPORT_BLANK}" ${selected === REPORT_BLANK ? "selected" : ""}>${escapeHtml(blankLabel)}</option>`
+      : "") +
+    (values || [])
+      .map(
+        (value) =>
+          `<option value="${escapeHtml(value)}" ${String(selected) === String(value) ? "selected" : ""}>${escapeHtml(value)}</option>`
+      )
+      .join("")
+  );
+}
+
+function registeredAlumniReportPanelHtml(alumni, filters = {}) {
+  const f = { ...emptyRegisteredAlumniReportFilters(), ...filters };
+  const filtered = filterRegisteredAlumniReport(alumni, f);
+  const batches = uniqueReportValues(alumni, (r) => String(r.batch || "").replace("—", "").trim());
+  const companies = uniqueReportValues(alumni, (r) => r.company);
+  const roles = uniqueReportValues(alumni, (r) => r.jobRole);
+  const sectors = [...new Set([...JOB_SECTORS, ...uniqueReportValues(alumni, (r) => r.jobSector)])];
+  const note = registeredAlumniReportFilterNote(f);
+  return `
+        <div class="er-report">
+          <div class="er-report__head">
+            <div>
+              <h3 class="ac-dashboard__subtitle" style="margin:0;">Registered alumni report</h3>
+              <p class="form-hint" style="margin:0.35rem 0 0;">
+                Unique Event Desk check-ins after dropping test records, disabled copies, and duplicate extras.
+                Combine branch, job, and job category filters — downloads use the matching list.
+              </p>
+            </div>
+            <div class="er-report__actions">
+              <button type="button" class="btn btn--primary btn--sm" data-er-report="pdf">Download PDF</button>
+              <button type="button" class="btn btn--ghost btn--sm" data-er-report="branch">PDF: branch + phone</button>
+              <button type="button" class="btn btn--ghost btn--sm" data-er-report="xlsx">Download Excel</button>
+            </div>
+          </div>
+          <div class="ac-filters ac-filters--compact er-report-filters">
+            <div class="form-row">
+              <div class="form-group">
+                <label for="erRptSearch">Search</label>
+                <input type="search" id="erRptSearch" value="${escapeHtml(f.search)}" placeholder="Name, phone, company, role…">
+              </div>
+              <div class="form-group">
+                <label for="erRptDept">Branch</label>
+                <select id="erRptDept">
+                  <option value="">All branches</option>
+                  ${DEPARTMENTS.map(
+                    (d) =>
+                      `<option value="${escapeHtml(d.value)}" ${f.department === d.value ? "selected" : ""}>${escapeHtml(d.label)}</option>`
+                  ).join("")}
+                </select>
+              </div>
+              <div class="form-group">
+                <label for="erRptBatch">Passout year</label>
+                <select id="erRptBatch">${reportFilterOptionsHtml(batches, f.batch, { includeBlank: false })}</select>
+              </div>
+              <div class="form-group">
+                <label for="erRptSector">Job category</label>
+                <select id="erRptSector">${reportFilterOptionsHtml(sectors, f.jobSector)}</select>
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label for="erRptCompany">Company / workplace</label>
+                <select id="erRptCompany">${reportFilterOptionsHtml(companies, f.company)}</select>
+              </div>
+              <div class="form-group">
+                <label for="erRptRole">Job / role</label>
+                <select id="erRptRole">${reportFilterOptionsHtml(roles, f.jobRole)}</select>
+              </div>
+              <div class="form-group" style="display:flex;align-items:flex-end;">
+                <button type="button" class="btn btn--ghost btn--sm" data-er-report-reset="1">Reset filters</button>
+              </div>
+            </div>
+          </div>
+          <p class="ac-results-meta">
+            ${filtered.length} of ${alumni.length} unique alumni
+            ${note ? ` · ${escapeHtml(note)}` : " · all unique check-ins"}
+          </p>
+          <div class="table-scroll er-report-preview">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Branch</th>
+                  <th>Year</th>
+                  <th>Job / company</th>
+                  <th>Job category</th>
+                  <th>Phone</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${
+                  filtered.length
+                    ? filtered
+                        .map(
+                          (r) => `
+                  <tr>
+                    <td><strong>${escapeHtml(r.name || "—")}</strong></td>
+                    <td>${escapeHtml(r.departmentLabel || r.department || "—")}</td>
+                    <td>${escapeHtml(String(r.batch || "—"))}</td>
+                    <td>${escapeHtml(r.jobRole || r.company || "—")}${
+                      r.jobRole && r.company
+                        ? `<div class="form-hint">${escapeHtml(r.company)}</div>`
+                        : ""
+                    }</td>
+                    <td>${escapeHtml(r.jobSector || "—")}</td>
+                    <td>${escapeHtml(r.phone || "—")}</td>
+                  </tr>`
+                        )
+                        .join("")
+                    : `<tr><td colspan="6" class="empty-state">No registered alumni match this combination of filters.</td></tr>`
+                }
+              </tbody>
+            </table>
+          </div>
+        </div>`;
 }
 
 const inflightCheckInKeys = new Set();
@@ -2331,6 +2534,7 @@ export async function mountAdminEventDesk(wrap, { session, notify } = {}) {
     department: "",
     source: "",
     issue: "",
+    reportFilters: emptyRegisteredAlumniReportFilters(),
     feeSettings: { feeAmount: 0 },
   };
 
@@ -2473,21 +2677,7 @@ export async function mountAdminEventDesk(wrap, { session, notify } = {}) {
           </div>
         </div>
 
-        
-        <div class="er-report">
-          <div>
-            <h3 class="ac-dashboard__subtitle" style="margin:0;">Registered alumni report</h3>
-            <p class="form-hint" style="margin:0.35rem 0 0;">
-              Unique Event Desk check-ins after dropping test records, disabled copies, and duplicate extras.
-              Use the full PDF/Excel for counts, or <strong>PDF: branch + phone</strong> for a branch-wise name and contact list.
-            </p>
-          </div>
-          <div class="er-report__actions">
-            <button type="button" class="btn btn--primary btn--sm" data-er-report="pdf">Download PDF</button>
-            <button type="button" class="btn btn--ghost btn--sm" data-er-report="branch">PDF: branch + phone</button>
-            <button type="button" class="btn btn--ghost btn--sm" data-er-report="xlsx">Download Excel</button>
-          </div>
-        </div>
+        ${registeredAlumniReportPanelHtml(registeredAlumniReportData(state.enrollments).alumni, state.reportFilters)}
 
         ${deskFeeLedgerHtml(state)}
 
@@ -2644,15 +2834,39 @@ export async function mountAdminEventDesk(wrap, { session, notify } = {}) {
       state.issue = e.target.value;
       render();
     });
-    
+
+    wrap.querySelector("#erRptSearch")?.addEventListener("input", (e) => {
+      state.reportFilters.search = e.target.value;
+      render();
+    });
+    ["erRptDept", "erRptBatch", "erRptSector", "erRptCompany", "erRptRole"].forEach((id) => {
+      wrap.querySelector(`#${id}`)?.addEventListener("change", (e) => {
+        const map = {
+          erRptDept: "department",
+          erRptBatch: "batch",
+          erRptSector: "jobSector",
+          erRptCompany: "company",
+          erRptRole: "jobRole",
+        };
+        state.reportFilters[map[id]] = e.target.value;
+        render();
+      });
+    });
+    wrap.querySelector("[data-er-report-reset]")?.addEventListener("click", () => {
+      state.reportFilters = emptyRegisteredAlumniReportFilters();
+      render();
+    });
+
     wrap.querySelectorAll("[data-er-report]").forEach((btn) => {
       btn.addEventListener("click", async () => {
         const kind = btn.dataset.erReport;
         btn.disabled = true;
         try {
           const payload = registeredAlumniReportData(state.enrollments);
+          payload.alumni = filterRegisteredAlumniReport(payload.alumni, state.reportFilters);
+          payload.filterNote = registeredAlumniReportFilterNote(state.reportFilters);
           const generatedBy = session.displayName || session.username || "";
-          const mod = await import("./event-desk-registered-report.js?v=er29");
+          const mod = await import("./event-desk-registered-report.js?v=er31");
           if (kind === "pdf") {
             await mod.downloadRegisteredAlumniPdf({ ...payload, generatedBy });
           } else if (kind === "branch") {
@@ -2662,10 +2876,10 @@ export async function mountAdminEventDesk(wrap, { session, notify } = {}) {
           }
           toast(
             kind === "pdf"
-              ? "Registered alumni PDF downloaded."
+              ? `Registered alumni PDF downloaded (${payload.alumni.length}).`
               : kind === "branch"
-                ? "Branch-wise contacts PDF downloaded."
-                : "Registered alumni Excel downloaded.",
+                ? `Branch-wise contacts PDF downloaded (${payload.alumni.length}).`
+                : `Registered alumni Excel downloaded (${payload.alumni.length}).`,
             "success"
           );
         } catch (err) {

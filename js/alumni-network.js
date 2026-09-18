@@ -36,7 +36,7 @@ import {
 import {
   loadEventRegistrations,
   registeredAlumniReportData,
-} from "./event-registration.js?v=er30";
+} from "./event-registration.js?v=er31";
 
 function omitUndefined(obj) {
   return Object.fromEntries(Object.entries(obj || {}).filter(([, value]) => value !== undefined));

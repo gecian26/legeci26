@@ -113,6 +113,23 @@ function rptByBatch(alumni) {
   );
 }
 
+function rptByJobSector(alumni) {
+  const map = new Map();
+  (alumni || []).forEach((row) => {
+    const label = String(row.jobSector || "").trim() || "Not recorded";
+    if (!map.has(label)) {
+      map.set(label, { label, count: 0, people: 0, food: 0, souvenir: 0, hillview: 0, feeTotal: 0 });
+    }
+    addToBucket(map.get(label), row);
+  });
+  return [...map.values()].sort((a, b) => b.count - a.count || a.label.localeCompare(b.label));
+}
+
+function filterCaption(opts = {}) {
+  const note = String(opts.filterNote || "").trim();
+  return note || "All unique registered alumni (no extra filters)";
+}
+
 function rptMatrix(alumni) {
   const branches = [];
   const seen = new Set();
@@ -287,7 +304,7 @@ export async function downloadRegisteredAlumniPdf(opts = {}) {
   doc.setFont("helvetica", "normal");
   doc.setFontSize(8);
   doc.setTextColor(190, 190, 210);
-  doc.text(`Unique check-ins after duplicate removal  ·  ${dateLong}`, margin, 28);
+  doc.text(`${filterCaption(opts)}  ·  ${dateLong}`, margin, 28);
   doc.text(`${stats.count} alumni`, pageW - margin, 20, { align: "right" });
   if (generatedBy) doc.text(generatedBy, pageW - margin, 28, { align: "right" });
 
@@ -298,7 +315,7 @@ export async function downloadRegisteredAlumniPdf(opts = {}) {
   doc.setFontSize(7.5);
   doc.setTextColor(...INK.muted);
   const note = doc.splitTextToSize(
-    `Each person is counted once (earliest live check-in kept). ${rptNote(excluded)}`,
+    `Each person is counted once (earliest live check-in kept). ${rptNote(excluded)} ${filterCaption(opts)}.`,
     contentW - 8
   );
   doc.text(note[0], margin + 4, y + 6.4);
@@ -498,7 +515,7 @@ export async function downloadRegisteredAlumniBranchPdf(opts = {}) {
   doc.setFontSize(7.5);
   doc.setTextColor(...INK.muted);
   const note = doc.splitTextToSize(
-    `Unique check-ins after duplicate removal. ${rptNote(excluded)}`,
+    `Unique check-ins after duplicate removal. ${filterCaption(opts)}. ${rptNote(excluded)}`,
     contentW - 8
   );
   doc.text(note[0], margin + 4, y + 6.4);
@@ -602,6 +619,7 @@ export async function downloadRegisteredAlumniExcel(opts = {}) {
   const stats = rptTotals(alumni);
   const branchRows = rptByBranch(alumni);
   const batchRows = rptByBatch(alumni);
+  const sectorRows = rptByJobSector(alumni);
   const matrix = rptMatrix(alumni);
   const dateStr = stampFile();
 
@@ -612,6 +630,7 @@ export async function downloadRegisteredAlumniExcel(opts = {}) {
       [{ value: `${eventTitle()} registered alumni`, fontWeight: "bold", fontSize: 16, color: "#3d1454" }],
       [{ value: `Generated ${stampClock()}${generatedBy ? ` · ${generatedBy}` : ""}` }],
       [{ value: "Unique Event Desk check-ins after removing test records, disabled copies, and duplicate extras." }],
+      [{ value: filterCaption(opts) }],
       [{ value: rptNote(excluded) }],
       [],
       headRow(["Item", "Count", "", ""]),
@@ -655,6 +674,21 @@ export async function downloadRegisteredAlumniExcel(opts = {}) {
     ])
   );
 
+  const sectorSheet = sheetOf(
+    "By job category",
+    ["Job category", "Alumni", "People", "Food", "Souvenir", "Hillview", "Desk fees (INR)"],
+    [28, 12, 12, 12, 12, 12, 16],
+    sectorRows.map((r) => [
+      txt(r.label),
+      num(r.count),
+      num(r.people),
+      num(r.food),
+      num(r.souvenir),
+      num(r.hillview),
+      inr(r.feeTotal),
+    ])
+  );
+
   const matrixHead = ["Branch", ...matrix.batches.map(String), "Total"];
   const matrixBody = matrix.branches.map((branch) => {
     const cells = matrix.batches.map((batch) => num(matrix.counts.get(`${branch.code}|${batch}`) || 0));
@@ -673,6 +707,8 @@ export async function downloadRegisteredAlumniExcel(opts = {}) {
       "Phone",
       "Email",
       "Company",
+      "Job / role",
+      "Job category",
       "People",
       "Family",
       "Source",
@@ -684,7 +720,7 @@ export async function downloadRegisteredAlumniExcel(opts = {}) {
       "Receipt",
       "Recorded by",
     ],
-    [6, 28, 32, 12, 14, 28, 24, 10, 10, 16, 10, 12, 16, 14, 12, 18, 18],
+    [6, 28, 32, 12, 14, 28, 24, 22, 20, 10, 10, 16, 10, 12, 16, 14, 12, 18, 18],
     alumni.map((r, i) => [
       num(i + 1),
       txt(r.name),
@@ -693,6 +729,8 @@ export async function downloadRegisteredAlumniExcel(opts = {}) {
       txt(r.phone),
       txt(r.email),
       txt(r.company),
+      txt(r.jobRole),
+      txt(r.jobSector),
       num(r.people),
       num(r.family),
       txt(r.source),
@@ -706,7 +744,7 @@ export async function downloadRegisteredAlumniExcel(opts = {}) {
     ])
   );
 
-  await writeExcelFile([summary, branchSheet, batchSheet, matrixSheet, listSheet]).toFile(
+  await writeExcelFile([summary, branchSheet, batchSheet, sectorSheet, matrixSheet, listSheet]).toFile(
     `${eventTitle()}-registered-alumni-${dateStr}.xlsx`
   );
 }
