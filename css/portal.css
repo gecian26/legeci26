@@ -2776,6 +2776,16 @@
   border-radius: 10px;
 }
 
+.er-admin .data-table a {
+  color: var(--purple-700, #6b2d7b);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.er-admin .data-table a:hover {
+  text-decoration: underline;
+}
+
 .an-admin {
   display: flex;
   flex-direction: column;

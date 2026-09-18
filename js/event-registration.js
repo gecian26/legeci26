@@ -1083,13 +1083,14 @@ function registeredAlumniReportPanelHtml(alumni, filters = {}) {
               <h3 class="ac-dashboard__subtitle" style="margin:0;">Registered alumni report</h3>
               <p class="form-hint" style="margin:0.35rem 0 0;">
                 Unique Event Desk check-ins after dropping test records, disabled copies, and duplicate extras.
-                Combine branch, job, and job category filters — downloads use the matching list.
+                Combine branch and job category to list people to contact. Downloads and the contact list use the matching alumni.
               </p>
             </div>
             <div class="er-report__actions">
               <button type="button" class="btn btn--primary btn--sm" data-er-report="pdf">Download PDF</button>
               <button type="button" class="btn btn--ghost btn--sm" data-er-report="branch">PDF: branch + phone</button>
               <button type="button" class="btn btn--ghost btn--sm" data-er-report="xlsx">Download Excel</button>
+              <button type="button" class="btn btn--primary btn--sm" data-er-report="contacts">Contact list</button>
             </div>
           </div>
           <div class="ac-filters ac-filters--compact er-report-filters">
@@ -2403,9 +2404,10 @@ function erStatCardsHtml(stats) {
     </div>`;
 }
 
-function filterDeskRows(rows, { search = "", department = "", source = "", issue = "", duplicateIds = new Set() } = {}) {
+function filterDeskRows(rows, { search = "", department = "", source = "", issue = "", jobSector = "", duplicateIds = new Set() } = {}) {
   return (rows || []).filter((r) => {
     if (department && r.department !== department) return false;
+    if (!matchReportFilter(r.jobSector, jobSector)) return false;
     if (source === EVENT_REG_SOURCES.STAFF) {
       if (!isStaffCheckIn(r)) return false;
     } else if (source && r.source !== source) return false;
@@ -2429,6 +2431,54 @@ function filterDeskRows(rows, { search = "", department = "", source = "", issue
     if (search && !matchesSearch(r, search)) return false;
     return true;
   });
+}
+
+function contactCellHtml(row) {
+  const phone = String(row.mobile || row.whatsapp || "").trim();
+  const email = String(row.email || "").trim();
+  const phoneHtml = phone
+    ? `<a href="tel:${escapeHtml(phone.replace(/\s+/g, ""))}">${escapeHtml(phone)}</a>`
+    : "—";
+  const emailHtml = email
+    ? `<br><a href="mailto:${escapeHtml(email)}">${escapeHtml(email)}</a>`
+    : "";
+  return `${phoneHtml}${emailHtml}`;
+}
+
+function uniqueDeskContacts(rows) {
+  const seen = new Set();
+  const list = [];
+  (rows || []).forEach((row) => {
+    if (isStaffCheckIn(row) || isEventDeskInactiveRecord(row)) return;
+    const phone = normalizePhoneDigits(row.mobile || row.whatsapp);
+    const key = phone.length >= 10 ? `p:${phone}` : `id:${row.id}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    list.push({
+      name: row.alumniName || "",
+      department: row.department || "",
+      departmentLabel: departmentLabel(row.department),
+      batch: String(row.batch || "").trim() || "—",
+      company: row.company || "",
+      jobRole: row.jobRole || "",
+      jobSector: row.jobSector || "",
+      phone: row.mobile || row.whatsapp || "",
+      email: row.email || "",
+    });
+  });
+  list.sort(
+    (a, b) =>
+      a.departmentLabel.localeCompare(b.departmentLabel) ||
+      String(b.batch).localeCompare(String(a.batch), undefined, { numeric: true }) ||
+      a.name.localeCompare(b.name)
+  );
+  return list;
+}
+
+function deskJobSectorOptionsHtml(rows, selected = "") {
+  const fromData = uniqueReportValues(rows, (r) => r.jobSector);
+  const sectors = [...new Set([...JOB_SECTORS, ...fromData])];
+  return reportFilterOptionsHtml(sectors, selected);
 }
 
 function deskCopyBadgeHtml(row, dup) {
@@ -2534,6 +2584,7 @@ export async function mountAdminEventDesk(wrap, { session, notify } = {}) {
     department: "",
     source: "",
     issue: "",
+    jobSector: "",
     reportFilters: emptyRegisteredAlumniReportFilters(),
     feeSettings: { feeAmount: 0 },
   };
@@ -2700,6 +2751,10 @@ export async function mountAdminEventDesk(wrap, { session, notify } = {}) {
               </select>
             </div>
             <div class="form-group">
+              <label for="erAdmSector">Job category</label>
+              <select id="erAdmSector">${deskJobSectorOptionsHtml(state.enrollments, state.jobSector)}</select>
+            </div>
+            <div class="form-group">
               <label for="erAdmSource">Source</label>
               <select id="erAdmSource">
                 <option value="">All</option>
@@ -2733,11 +2788,20 @@ export async function mountAdminEventDesk(wrap, { session, notify } = {}) {
               </select>
             </div>
           </div>
-          <p class="form-hint">Showing ${filtered.length} of ${state.enrollments.length} check-ins. Event Desk fees stay off treasurer books until you verify and move them above.${
-            stats.duplicateCount
-              ? ` ${stats.duplicateCount} extra cop${stats.duplicateCount === 1 ? "y is" : "ies are"} tagged Duplicate — disable them so people, food, Hillview, and fee totals count each person once.`
-              : ""
-          }</p>
+          <p class="form-hint">
+            Showing ${filtered.length} of ${state.enrollments.length} check-ins.
+            Use <strong>Job category</strong> (for example IT / Software) to list alumni to contact by phone or email.
+            ${
+              stats.duplicateCount
+                ? ` ${stats.duplicateCount} extra cop${stats.duplicateCount === 1 ? "y is" : "ies are"} tagged Duplicate — disable them so people, food, Hillview, and fee totals count each person once.`
+                : ""
+            }
+          </p>
+          <div class="er-report__actions" style="margin-bottom:0.75rem;">
+            <button type="button" class="btn btn--ghost btn--sm" data-er-contacts="emails">Copy emails</button>
+            <button type="button" class="btn btn--ghost btn--sm" data-er-contacts="phones">Copy phone numbers</button>
+            <button type="button" class="btn btn--primary btn--sm" data-er-contacts="xlsx">Download contact list</button>
+          </div>
           <div class="table-scroll">
             <table class="data-table">
               <thead>
@@ -2779,7 +2843,7 @@ export async function mountAdminEventDesk(wrap, { session, notify } = {}) {
                           ? `<br><small>${escapeHtml(r.batch)}</small>`
                           : ""
                     }</td>
-                    <td>${escapeHtml(r.mobile || r.whatsapp || "—")}${r.email ? `<br><small style="color:var(--slate-500)">${escapeHtml(r.email)}</small>` : ""}</td>
+                    <td>${contactCellHtml(r)}</td>
                     <td>${partySizeOf(r)}${accompanyingOf(r) ? `<br><small>${accompanyingOf(r)} family</small>` : ""}</td>
                     <td>${
                       isStaffCheckIn(r)
@@ -2834,6 +2898,63 @@ export async function mountAdminEventDesk(wrap, { session, notify } = {}) {
       state.issue = e.target.value;
       render();
     });
+    wrap.querySelector("#erAdmSector")?.addEventListener("change", (e) => {
+      state.jobSector = e.target.value;
+      render();
+    });
+
+    wrap.querySelectorAll("[data-er-contacts]").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const kind = btn.dataset.erContacts;
+        const dupIds = duplicateCheckInIds(state.enrollments);
+        const contacts = uniqueDeskContacts(
+          filterDeskRows(state.enrollments, { ...state, duplicateIds: dupIds.extras })
+        );
+        if (!contacts.length) {
+          toast("No alumni contacts match the current filters.", "error");
+          return;
+        }
+        try {
+          if (kind === "emails") {
+            const emails = contacts.map((c) => c.email).filter(Boolean);
+            if (!emails.length) {
+              toast("None of these alumni have an email on file.", "error");
+              return;
+            }
+            await navigator.clipboard.writeText(emails.join("\n"));
+            toast(`Copied ${emails.length} email${emails.length === 1 ? "" : "s"}.`, "success");
+            return;
+          }
+          if (kind === "phones") {
+            const phones = contacts.map((c) => c.phone).filter(Boolean);
+            if (!phones.length) {
+              toast("None of these alumni have a phone number on file.", "error");
+              return;
+            }
+            await navigator.clipboard.writeText(phones.join("\n"));
+            toast(`Copied ${phones.length} phone number${phones.length === 1 ? "" : "s"}.`, "success");
+            return;
+          }
+          const mod = await import("./event-desk-registered-report.js?v=er32");
+          await mod.downloadAlumniContactList({
+            alumni: contacts,
+            generatedBy: session.displayName || session.username || "",
+            filterNote: [
+              state.jobSector && state.jobSector !== REPORT_BLANK ? `Job category ${state.jobSector}` : "",
+              state.jobSector === REPORT_BLANK ? "Job category not recorded" : "",
+              state.department ? `Branch ${departmentLabel(state.department)}` : "",
+              state.search ? `Search “${state.search.trim()}”` : "",
+            ]
+              .filter(Boolean)
+              .join(" · "),
+          });
+          toast(`Contact list downloaded (${contacts.length} alumni).`, "success");
+        } catch (err) {
+          console.error(err);
+          toast(err.message || "Could not prepare the contact list.", "error");
+        }
+      });
+    });
 
     wrap.querySelector("#erRptSearch")?.addEventListener("input", (e) => {
       state.reportFilters.search = e.target.value;
@@ -2866,11 +2987,13 @@ export async function mountAdminEventDesk(wrap, { session, notify } = {}) {
           payload.alumni = filterRegisteredAlumniReport(payload.alumni, state.reportFilters);
           payload.filterNote = registeredAlumniReportFilterNote(state.reportFilters);
           const generatedBy = session.displayName || session.username || "";
-          const mod = await import("./event-desk-registered-report.js?v=er31");
+          const mod = await import("./event-desk-registered-report.js?v=er32");
           if (kind === "pdf") {
             await mod.downloadRegisteredAlumniPdf({ ...payload, generatedBy });
           } else if (kind === "branch") {
             await mod.downloadRegisteredAlumniBranchPdf({ ...payload, generatedBy });
+          } else if (kind === "contacts") {
+            await mod.downloadAlumniContactList({ ...payload, generatedBy });
           } else {
             await mod.downloadRegisteredAlumniExcel({ ...payload, generatedBy });
           }
@@ -2879,7 +3002,9 @@ export async function mountAdminEventDesk(wrap, { session, notify } = {}) {
               ? `Registered alumni PDF downloaded (${payload.alumni.length}).`
               : kind === "branch"
                 ? `Branch-wise contacts PDF downloaded (${payload.alumni.length}).`
-                : `Registered alumni Excel downloaded (${payload.alumni.length}).`,
+                : kind === "contacts"
+                  ? `Contact list downloaded (${payload.alumni.length}).`
+                  : `Registered alumni Excel downloaded (${payload.alumni.length}).`,
             "success"
           );
         } catch (err) {

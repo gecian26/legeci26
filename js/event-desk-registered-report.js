@@ -748,3 +748,65 @@ export async function downloadRegisteredAlumniExcel(opts = {}) {
     `${eventTitle()}-registered-alumni-${dateStr}.xlsx`
   );
 }
+
+/**
+ * Name, job, phone, and email for outreach after filtering by job category.
+ * @param {{ alumni: object[], generatedBy?: string, filterNote?: string }} opts
+ */
+export async function downloadAlumniContactList(opts = {}) {
+  const alumni = opts.alumni || [];
+  const generatedBy = opts.generatedBy || "";
+  const dateStr = stampFile();
+  const emails = alumni.map((r) => String(r.email || "").trim()).filter(Boolean);
+  const phones = alumni.map((r) => String(r.phone || "").trim()).filter(Boolean);
+
+  const overview = {
+    sheet: "Outreach",
+    columns: [{ width: 42 }, { width: 22 }],
+    data: [
+      [{ value: `${eventTitle()} alumni contact list`, fontWeight: "bold", fontSize: 16, color: "#3d1454" }],
+      [{ value: `Generated ${stampClock()}${generatedBy ? ` · ${generatedBy}` : ""}` }],
+      [{ value: filterCaption(opts) }],
+      [{ value: "Use phone and email to contact alumni in the selected job category." }],
+      [],
+      headRow(["Item", "Count"]),
+      [txt("Alumni"), num(alumni.length)],
+      [txt("With email"), num(emails.length)],
+      [txt("With phone"), num(phones.length)],
+    ],
+  };
+
+  const contacts = sheetOf(
+    "Contacts",
+    ["#", "Name", "Branch", "Passout year", "Company", "Job / role", "Job category", "Phone", "Email"],
+    [6, 28, 32, 12, 28, 22, 20, 16, 32],
+    alumni.map((r, i) => [
+      num(i + 1),
+      txt(r.name || r.alumniName),
+      txt(r.departmentLabel || r.department),
+      txt(r.batch),
+      txt(r.company),
+      txt(r.jobRole),
+      txt(r.jobSector),
+      txt(r.phone),
+      txt(r.email),
+    ])
+  );
+
+  const emailSheet = sheetOf(
+    "Emails",
+    ["Email"],
+    [40],
+    emails.map((email) => [txt(email)])
+  );
+  const phoneSheet = sheetOf(
+    "Phone numbers",
+    ["Phone"],
+    [18],
+    phones.map((phone) => [txt(phone)])
+  );
+
+  await writeExcelFile([overview, contacts, emailSheet, phoneSheet]).toFile(
+    `${eventTitle()}-alumni-contacts-${dateStr}.xlsx`
+  );
+}
