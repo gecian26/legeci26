@@ -995,14 +995,30 @@ function matchReportFilter(value, selected) {
   return String(value || "").trim() === String(selected).trim();
 }
 
+function asFilterList(value) {
+  if (Array.isArray(value)) {
+    return value.map((item) => String(item || "").trim()).filter(Boolean);
+  }
+  const text = String(value || "").trim();
+  return text ? [text] : [];
+}
+
+function matchReportFilterList(value, selected) {
+  const list = asFilterList(selected);
+  if (!list.length) return true;
+  if (list.includes(REPORT_BLANK) && isReportBlank(value)) return true;
+  const text = String(value || "").trim();
+  return list.some((item) => item !== REPORT_BLANK && item === text);
+}
+
 export function emptyRegisteredAlumniReportFilters() {
   return {
     search: "",
     department: "",
     batch: "",
     jobSector: "",
-    company: "",
-    jobRole: "",
+    company: [],
+    jobRole: [],
   };
 }
 
@@ -1013,8 +1029,8 @@ export function filterRegisteredAlumniReport(alumni, filters = {}) {
     if (!matchReportFilter(row.department, filters.department)) return false;
     if (!matchReportFilter(String(row.batch || "").replace("—", "").trim(), filters.batch)) return false;
     if (!matchReportFilter(row.jobSector, filters.jobSector)) return false;
-    if (!matchReportFilter(row.company, filters.company)) return false;
-    if (!matchReportFilter(row.jobRole, filters.jobRole)) return false;
+    if (!matchReportFilterList(row.company, filters.company)) return false;
+    if (!matchReportFilterList(row.jobRole, filters.jobRole)) return false;
     if (q) {
       const hay = [
         row.name,
@@ -1046,10 +1062,20 @@ export function registeredAlumniReportFilterNote(filters = {}) {
   if (f.batch) parts.push(`Passout ${f.batch}`);
   if (f.jobSector === REPORT_BLANK) parts.push("Job category not recorded");
   else if (f.jobSector) parts.push(`Job category ${f.jobSector}`);
-  if (f.company === REPORT_BLANK) parts.push("Company not recorded");
-  else if (f.company) parts.push(`Company ${f.company}`);
-  if (f.jobRole === REPORT_BLANK) parts.push("Job / role not recorded");
-  else if (f.jobRole) parts.push(`Job ${f.jobRole}`);
+  const companies = asFilterList(f.company);
+  if (companies.includes(REPORT_BLANK) && companies.length === 1) parts.push("Company not recorded");
+  else if (companies.length) {
+    const names = companies.filter((item) => item !== REPORT_BLANK);
+    if (companies.includes(REPORT_BLANK)) names.push("not recorded");
+    parts.push(names.length <= 3 ? `Company ${names.join(", ")}` : `Company ${names.slice(0, 3).join(", ")} +${names.length - 3} more`);
+  }
+  const roles = asFilterList(f.jobRole);
+  if (roles.includes(REPORT_BLANK) && roles.length === 1) parts.push("Job / role not recorded");
+  else if (roles.length) {
+    const names = roles.filter((item) => item !== REPORT_BLANK);
+    if (roles.includes(REPORT_BLANK)) names.push("not recorded");
+    parts.push(names.length <= 3 ? `Job ${names.join(", ")}` : `Job ${names.slice(0, 3).join(", ")} +${names.length - 3} more`);
+  }
   return parts.length ? `Filters: ${parts.join(" · ")}` : "";
 }
 
@@ -1068,6 +1094,77 @@ function reportFilterOptionsHtml(values, selected, { includeBlank = true, blankL
   );
 }
 
+function reportMultiFilterHtml(id, values, selected, { includeBlank = true, blankLabel = "Not recorded", findPlaceholder = "Find…" } = {}) {
+  const sel = new Set(asFilterList(selected));
+  const items = [];
+  if (includeBlank) {
+    items.push(
+      `<label class="er-multi__item"><input type="checkbox" value="${REPORT_BLANK}" ${sel.has(REPORT_BLANK) ? "checked" : ""}> ${escapeHtml(blankLabel)}</label>`
+    );
+  }
+  (values || []).forEach((value) => {
+    items.push(
+      `<label class="er-multi__item"><input type="checkbox" value="${escapeHtml(value)}" ${sel.has(value) ? "checked" : ""}> ${escapeHtml(value)}</label>`
+    );
+  });
+  const count = sel.size;
+  return `
+    <div class="er-multi">
+      <input type="search" class="er-multi__find" data-er-multi-filter="${escapeHtml(id)}" placeholder="${escapeHtml(findPlaceholder)}" autocomplete="off">
+      <p class="form-hint er-multi__hint">${count ? `${count} selected` : "Tick one or more"}</p>
+      <div class="er-multi__list" id="${escapeHtml(id)}">
+        ${items.join("") || `<p class="form-hint" style="margin:0.35rem;">No values recorded yet.</p>`}
+      </div>
+    </div>`;
+}
+
+function registeredAlumniReportPreviewTableHtml(filtered) {
+  return `
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Branch</th>
+                  <th>Year</th>
+                  <th>Job / company</th>
+                  <th>Job category</th>
+                  <th>Phone</th>
+                  <th>Email</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${
+                  filtered.length
+                    ? filtered
+                        .map(
+                          (r) => `
+                  <tr>
+                    <td><strong>${escapeHtml(r.name || "—")}</strong></td>
+                    <td>${escapeHtml(r.departmentLabel || r.department || "—")}</td>
+                    <td>${escapeHtml(String(r.batch || "—"))}</td>
+                    <td>${escapeHtml(r.jobRole || r.company || "—")}${
+                      r.jobRole && r.company
+                        ? `<div class="form-hint">${escapeHtml(r.company)}</div>`
+                        : ""
+                    }</td>
+                    <td>${escapeHtml(r.jobSector || "—")}</td>
+                    <td>${escapeHtml(r.phone || "—")}</td>
+                    <td>${escapeHtml(r.email || "—")}</td>
+                  </tr>`
+                        )
+                        .join("")
+                    : `<tr><td colspan="7" class="empty-state">No registered alumni match this combination of filters.</td></tr>`
+                }
+              </tbody>
+            </table>`;
+}
+
+function registeredAlumniReportMetaHtml(filteredCount, total, note) {
+  return `${filteredCount} of ${total} unique alumni${
+    note ? ` · ${escapeHtml(note)}` : " · all unique check-ins"
+  } · PDF, Excel and contact list use this filtered set`;
+}
+
 function registeredAlumniReportPanelHtml(alumni, filters = {}) {
   const f = { ...emptyRegisteredAlumniReportFilters(), ...filters };
   const filtered = filterRegisteredAlumniReport(alumni, f);
@@ -1083,7 +1180,7 @@ function registeredAlumniReportPanelHtml(alumni, filters = {}) {
               <h3 class="ac-dashboard__subtitle" style="margin:0;">Registered alumni report</h3>
               <p class="form-hint" style="margin:0.35rem 0 0;">
                 Unique Event Desk check-ins after dropping test records, disabled copies, and duplicate extras.
-                Combine branch and job category to list people to contact. Downloads and the contact list use the matching alumni.
+                Tick several companies or job roles. PDF, Excel, branch PDF and the contact list are built from the filtered list below.
               </p>
             </div>
             <div class="er-report__actions">
@@ -1120,58 +1217,21 @@ function registeredAlumniReportPanelHtml(alumni, filters = {}) {
             </div>
             <div class="form-row">
               <div class="form-group">
-                <label for="erRptCompany">Company / workplace</label>
-                <select id="erRptCompany">${reportFilterOptionsHtml(companies, f.company)}</select>
+                <label>Company / workplace</label>
+                ${reportMultiFilterHtml("erRptCompany", companies, f.company, { findPlaceholder: "Find company…" })}
               </div>
               <div class="form-group">
-                <label for="erRptRole">Job / role</label>
-                <select id="erRptRole">${reportFilterOptionsHtml(roles, f.jobRole)}</select>
+                <label>Job / role</label>
+                ${reportMultiFilterHtml("erRptRole", roles, f.jobRole, { findPlaceholder: "Find role…" })}
               </div>
               <div class="form-group" style="display:flex;align-items:flex-end;">
                 <button type="button" class="btn btn--ghost btn--sm" data-er-report-reset="1">Reset filters</button>
               </div>
             </div>
           </div>
-          <p class="ac-results-meta">
-            ${filtered.length} of ${alumni.length} unique alumni
-            ${note ? ` · ${escapeHtml(note)}` : " · all unique check-ins"}
-          </p>
-          <div class="table-scroll er-report-preview">
-            <table class="data-table">
-              <thead>
-                <tr>
-                  <th>Name</th>
-                  <th>Branch</th>
-                  <th>Year</th>
-                  <th>Job / company</th>
-                  <th>Job category</th>
-                  <th>Phone</th>
-                </tr>
-              </thead>
-              <tbody>
-                ${
-                  filtered.length
-                    ? filtered
-                        .map(
-                          (r) => `
-                  <tr>
-                    <td><strong>${escapeHtml(r.name || "—")}</strong></td>
-                    <td>${escapeHtml(r.departmentLabel || r.department || "—")}</td>
-                    <td>${escapeHtml(String(r.batch || "—"))}</td>
-                    <td>${escapeHtml(r.jobRole || r.company || "—")}${
-                      r.jobRole && r.company
-                        ? `<div class="form-hint">${escapeHtml(r.company)}</div>`
-                        : ""
-                    }</td>
-                    <td>${escapeHtml(r.jobSector || "—")}</td>
-                    <td>${escapeHtml(r.phone || "—")}</td>
-                  </tr>`
-                        )
-                        .join("")
-                    : `<tr><td colspan="6" class="empty-state">No registered alumni match this combination of filters.</td></tr>`
-                }
-              </tbody>
-            </table>
+          <p class="ac-results-meta" id="erRptMeta">${registeredAlumniReportMetaHtml(filtered.length, alumni.length, note)}</p>
+          <div class="table-scroll er-report-preview" id="erRptPreview">
+            ${registeredAlumniReportPreviewTableHtml(filtered)}
           </div>
         </div>`;
 }
@@ -2935,7 +2995,7 @@ export async function mountAdminEventDesk(wrap, { session, notify } = {}) {
             toast(`Copied ${phones.length} phone number${phones.length === 1 ? "" : "s"}.`, "success");
             return;
           }
-          const mod = await import("./event-desk-registered-report.js?v=er32");
+          const mod = await import("./event-desk-registered-report.js?v=er33");
           await mod.downloadAlumniContactList({
             alumni: contacts,
             generatedBy: session.displayName || session.username || "",
@@ -2960,17 +3020,47 @@ export async function mountAdminEventDesk(wrap, { session, notify } = {}) {
       state.reportFilters.search = e.target.value;
       render();
     });
-    ["erRptDept", "erRptBatch", "erRptSector", "erRptCompany", "erRptRole"].forEach((id) => {
+    ["erRptDept", "erRptBatch", "erRptSector"].forEach((id) => {
       wrap.querySelector(`#${id}`)?.addEventListener("change", (e) => {
         const map = {
           erRptDept: "department",
           erRptBatch: "batch",
           erRptSector: "jobSector",
-          erRptCompany: "company",
-          erRptRole: "jobRole",
         };
         state.reportFilters[map[id]] = e.target.value;
         render();
+      });
+    });
+    const readReportMulti = (id) =>
+      [...wrap.querySelectorAll(`#${id} input[type="checkbox"]:checked`)].map((el) => el.value);
+    const syncReportMultis = () => {
+      state.reportFilters.company = readReportMulti("erRptCompany");
+      state.reportFilters.jobRole = readReportMulti("erRptRole");
+    };
+    const updateReportPreview = () => {
+      syncReportMultis();
+      const alumni = registeredAlumniReportData(state.enrollments).alumni;
+      const filtered = filterRegisteredAlumniReport(alumni, state.reportFilters);
+      const note = registeredAlumniReportFilterNote(state.reportFilters);
+      const meta = document.getElementById("erRptMeta");
+      const preview = document.getElementById("erRptPreview");
+      if (meta) meta.innerHTML = registeredAlumniReportMetaHtml(filtered.length, alumni.length, note);
+      if (preview) preview.innerHTML = registeredAlumniReportPreviewTableHtml(filtered);
+      wrap.querySelectorAll(".er-multi").forEach((box) => {
+        const n = box.querySelectorAll(".er-multi__list input:checked").length;
+        const hint = box.querySelector(".er-multi__hint");
+        if (hint) hint.textContent = n ? `${n} selected` : "Tick one or more";
+      });
+    };
+    wrap.querySelector("#erRptCompany")?.addEventListener("change", updateReportPreview);
+    wrap.querySelector("#erRptRole")?.addEventListener("change", updateReportPreview);
+    wrap.querySelectorAll("[data-er-multi-filter]").forEach((input) => {
+      input.addEventListener("input", () => {
+        const q = input.value.trim().toLowerCase();
+        const list = document.getElementById(input.dataset.erMultiFilter);
+        list?.querySelectorAll(".er-multi__item").forEach((label) => {
+          label.hidden = Boolean(q) && !label.textContent.toLowerCase().includes(q);
+        });
       });
     });
     wrap.querySelector("[data-er-report-reset]")?.addEventListener("click", () => {
@@ -2983,11 +3073,12 @@ export async function mountAdminEventDesk(wrap, { session, notify } = {}) {
         const kind = btn.dataset.erReport;
         btn.disabled = true;
         try {
+          syncReportMultis();
           const payload = registeredAlumniReportData(state.enrollments);
           payload.alumni = filterRegisteredAlumniReport(payload.alumni, state.reportFilters);
           payload.filterNote = registeredAlumniReportFilterNote(state.reportFilters);
           const generatedBy = session.displayName || session.username || "";
-          const mod = await import("./event-desk-registered-report.js?v=er32");
+          const mod = await import("./event-desk-registered-report.js?v=er33");
           if (kind === "pdf") {
             await mod.downloadRegisteredAlumniPdf({ ...payload, generatedBy });
           } else if (kind === "branch") {
