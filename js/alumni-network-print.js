@@ -216,6 +216,9 @@ function profileCard(p, index, { brought, programs }) {
   const progs = programs.filter((x) => x.alumniId === p.id);
   const remarks = remarksOf(p);
   const response = p.connectStatus || "not_contacted";
+  const tags = NETWORK_ACTIVITY_FIELDS.map((f) => ({ f, v: priorityOf(p, f.key) }))
+    .filter((t) => t.v)
+    .sort((a, b) => rankOf(b.v) - rankOf(a.v));
   const fact = (label, value) => (value ? `<div class="fact"><span>${esc(label)}</span><b>${esc(value)}</b></div>` : "");
   return `
     <article class="card">
@@ -224,6 +227,7 @@ function profileCard(p, index, { brought, programs }) {
           <span class="card__no">${index}</span>
           <h3>${esc(p.alumniName || "—")}</h3>
           <p>${esc(deptLabel(p.department))} · Passout ${esc(p.batch || "—")}</p>
+          ${tags.length ? `<div class="tags">${tags.map(({ f, v }) => `<span class="prio prio--${v}">${v === "low" ? "" : "★ "}${esc(f.short)}</span>`).join("")}<span class="tags__key">priority</span></div>` : ""}
         </div>
         <div class="card__status">${pill(labelOf(NETWORK_CONNECT_STATUS, response), RESPONSE_TONE[response] || "muted")}</div>
       </header>
@@ -313,6 +317,9 @@ const STYLES = `
   .card__head { display:flex; justify-content:space-between; gap:10px; align-items:flex-start; padding:8px 12px; background:var(--soft); border-bottom:1px solid var(--line); }
   .card__head h3 { display:inline; margin:0; font-size:12pt; }
   .card__head p { margin:2px 0 0; font-size:9pt; color:var(--muted); }
+  .tags { display:flex; flex-wrap:wrap; align-items:center; gap:4px; margin-top:5px; }
+  .tags .prio { margin-top:0; }
+  .tags__key { font-size:7.5pt; color:var(--muted); margin-left:2px; }
   .card__no { display:inline-block; min-width:22px; margin-right:6px; padding:1px 6px; border-radius:6px; background:var(--brand); color:#fff; font-size:8pt; font-weight:700; text-align:center; vertical-align:2px; }
   .facts { display:grid; grid-template-columns:repeat(2,1fr); gap:3px 16px; padding:8px 12px 4px; }
   .fact { display:flex; gap:8px; font-size:9pt; }

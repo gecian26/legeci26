@@ -11,7 +11,7 @@ import {
   updateDoc,
 } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-firestore.js";
 import { withSession } from "./auth.js";
-import { openNetworkReport } from "./alumni-network-print.js?v=er39";
+import { openNetworkReport } from "./alumni-network-print.js?v=er40";
 import {
   ALUMNI_NETWORK_COLLECTION,
   ALUMNI_PROGRAMS_COLLECTION,
@@ -134,6 +134,13 @@ function priorityOf(person, key) {
 function topPriorityRank(person, key = "") {
   const keys = key ? [key] : NETWORK_ACTIVITY_FIELDS.map((f) => f.key);
   return Math.max(0, ...keys.map((k) => networkPriorityRank(priorityOf(person, k))));
+}
+
+/** Every support that has a priority, highest first: [{ field, value }]. */
+function priorityTags(person) {
+  return NETWORK_ACTIVITY_FIELDS.map((field) => ({ field, value: priorityOf(person, field.key) }))
+    .filter((t) => t.value)
+    .sort((a, b) => networkPriorityRank(b.value) - networkPriorityRank(a.value));
 }
 
 function highPrioritySupports(person) {
@@ -938,8 +945,13 @@ function directoryTabHtml(state) {
                     : ""
                 }
                 ${
-                  highs.length
-                    ? `<div class="an-prio-chips" title="High priority for these supports">${highs.map((f) => `<span class="an-prio-chip">★ ${escapeHtml(f.short)}</span>`).join("")}</div>`
+                  priorityTags(p).length
+                    ? `<div class="an-prio-chips">${priorityTags(p)
+                        .map(
+                          ({ field, value }) =>
+                            `<span class="an-prio-chip an-prio-chip--${value}" title="${escapeHtml(optionLabel(NETWORK_PRIORITY, value))} priority for ${escapeHtml(field.label.toLowerCase())}">${value === "low" ? "" : "★ "}${escapeHtml(field.short)}</span>`
+                        )
+                        .join("")}</div>`
                     : ""
                 }
                 ${
