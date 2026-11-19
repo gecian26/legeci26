@@ -24,7 +24,7 @@ import {
   PROGRAM_STATUS,
   escapeHtml,
   formatDateShort,
-} from "./constants.js?v=er30";
+} from "./constants.js?v=er35";
 import {
   alumniFiltersHtml,
   filterAlumniContacts,
@@ -205,10 +205,7 @@ function emptyPerson() {
     referredByPhone: "",
     referredBySource: "",
     connectStatus: "not_contacted",
-    talkWillingness: "no_response",
-    shareWillingness: "no_response",
-    fundingWillingness: "no_response",
-    sponsorWillingness: "no_response",
+    ...Object.fromEntries(NETWORK_ACTIVITY_FIELDS.map((f) => [f.key, "no_response"])),
   };
 }
 
@@ -308,10 +305,7 @@ function personPayload(form, session, existing = {}) {
     referredByPhone: phoneKey(form.referredByPhone),
     referredBySource: form.referredBySource || "",
     connectStatus: form.connectStatus || "not_contacted",
-    talkWillingness: form.talkWillingness || "no_response",
-    shareWillingness: form.shareWillingness || "no_response",
-    fundingWillingness: form.fundingWillingness || "no_response",
-    sponsorWillingness: form.sponsorWillingness || "no_response",
+    ...Object.fromEntries(NETWORK_ACTIVITY_FIELDS.map((f) => [f.key, form[f.key] || "no_response"])),
     createdByUserId: existing.createdByUserId || session?.userId || "",
     createdByName: existing.createdByName || actorName(session),
     updatedAt: serverTimestamp(),
@@ -355,6 +349,8 @@ function summarizeNetwork(people, programs) {
     sharing: willing("shareWillingness"),
     funding: willing("fundingWillingness"),
     sponsor: willing("sponsorWillingness"),
+    internship: willing("internshipWillingness"),
+    placement: willing("placementWillingness"),
     programs: (programs || []).length,
     openPrograms: (programs || []).filter((p) => p.status === "planned" || p.status === "confirmed").length,
   };
@@ -491,6 +487,8 @@ function statsHtml(stats) {
     { label: "Willing to share", value: stats.sharing, tone: "good" },
     { label: "Funding", value: stats.funding, tone: "good" },
     { label: "Sponsorship", value: stats.sponsor, tone: "good" },
+    { label: "Internship support", value: stats.internship, tone: "good" },
+    { label: "Placement support", value: stats.placement, tone: "good" },
     { label: "Open programmes", value: stats.openPrograms, tone: "neutral" },
   ];
   return `
@@ -788,10 +786,10 @@ function directoryTabHtml(state) {
                 <button type="button" class="btn btn--ghost btn--sm${open ? " an-remarks-btn--open" : ""}" data-an-remarks="${escapeHtml(p.id)}" aria-expanded="${open}">Remarks${remarks.length ? ` (${remarks.length})` : ""}</button>
               </td>
             </tr>
-            ${open ? `<tr class="an-remarks-row"><td colspan="9">${remarksPanelHtml(p)}</td></tr>` : ""}`;
+            ${open ? `<tr class="an-remarks-row"><td colspan="${5 + NETWORK_ACTIVITY_FIELDS.length}">${remarksPanelHtml(p)}</td></tr>` : ""}`;
                   })
                   .join("")
-              : `<tr><td colspan="9" class="empty-state">No network alumni yet. Start from Event Desk registered students.</td></tr>`
+              : `<tr><td colspan="${5 + NETWORK_ACTIVITY_FIELDS.length}" class="empty-state">No network alumni yet. Start from Event Desk registered students.</td></tr>`
           }
         </tbody>
       </table>
@@ -865,7 +863,7 @@ function programsTabHtml(state) {
             </tr>`
                   )
                   .join("")
-              : `<tr><td colspan="7" class="empty-state">No programmes yet. Add a talk, sharing session, funding, or sponsorship.</td></tr>`
+              : `<tr><td colspan="7" class="empty-state">No programmes yet. Add a talk, sharing session, funding, sponsorship, internship or placement support.</td></tr>`
           }
         </tbody>
       </table>
@@ -1237,10 +1235,9 @@ export async function mountAdminAlumniNetwork(wrap, { session, notify } = {}) {
       address: document.getElementById("anAddress")?.value || "",
       notes: document.getElementById("anNotes")?.value || "",
       connectStatus: document.getElementById("anConnectStatus")?.value || "not_contacted",
-      talkWillingness: document.getElementById("an_talkWillingness")?.value || "no_response",
-      shareWillingness: document.getElementById("an_shareWillingness")?.value || "no_response",
-      fundingWillingness: document.getElementById("an_fundingWillingness")?.value || "no_response",
-      sponsorWillingness: document.getElementById("an_sponsorWillingness")?.value || "no_response",
+      ...Object.fromEntries(
+        NETWORK_ACTIVITY_FIELDS.map((f) => [f.key, document.getElementById(`an_${f.key}`)?.value || "no_response"])
+      ),
     };
   }
 
@@ -1441,7 +1438,7 @@ export async function mountAdminAlumniNetwork(wrap, { session, notify } = {}) {
 
   async function runReport(kind) {
     try {
-      const mod = await import("./alumni-network-report.js?v=er34");
+      const mod = await import("./alumni-network-report.js?v=er35");
       const generatedBy = actorName(session);
       if (kind === "network-pdf") await mod.downloadNetworkPdf({ people: state.people, generatedBy });
       if (kind === "network-xlsx") await mod.downloadNetworkExcel({ people: state.people, generatedBy });

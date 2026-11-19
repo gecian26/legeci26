@@ -53,7 +53,7 @@ import {
   statusBadgeHtml,
 } from "../js/alumni-connect.js?v=er2";
 import { mountAdminEventDesk } from "../js/event-registration.js?v=er33";
-import { mountAdminAlumniNetwork } from "../js/alumni-network.js?v=er34";
+import { mountAdminAlumniNetwork } from "../js/alumni-network.js?v=er35";
 import { loadLeaderboardPanel } from "../js/leaderboard.js";
 import { downloadAlumniContactsPdf } from "../js/alumni-contacts-pdf.js";
 import {

@@ -9,7 +9,7 @@ import {
   NETWORK_ORIGIN_KINDS,
   PROGRAM_KINDS,
   PROGRAM_STATUS,
-} from "./constants.js?v=er30";
+} from "./constants.js?v=er35";
 
 const INK = {
   navy: [18, 18, 42],
@@ -248,7 +248,7 @@ export async function downloadNetworkExcel({ people = [] } = {}) {
       "Notes",
       "Remarks",
     ],
-    [6, 28, 28, 12, 14, 28, 24, 20, 18, 18, 24, 14, 14, 14, 14, 14, 14, 36, 60],
+    [6, 28, 28, 12, 14, 28, 24, 20, 18, 18, 24, 14, 14, ...NETWORK_ACTIVITY_FIELDS.map(() => 16), 36, 60],
     people.map((p, i) => [
       num(i + 1),
       txt(p.alumniName),

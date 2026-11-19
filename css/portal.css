@@ -2899,9 +2899,15 @@
   white-space: nowrap;
 }
 
+.an-dir-table th,
+.an-dir-table td {
+  padding-left: 0.5rem;
+  padding-right: 0.5rem;
+}
+
 .an-dir-table .table-status-select {
-  min-width: 7.5rem;
-  max-width: 9.5rem;
+  min-width: 6.6rem;
+  max-width: 8.5rem;
 }
 
 /* Alumni Network — remarks log */

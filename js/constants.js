@@ -126,6 +126,8 @@ export const NETWORK_ACTIVITY_FIELDS = [
   { key: "shareWillingness", short: "Sharing", label: "Experience sharing" },
   { key: "fundingWillingness", short: "Funding", label: "Funding" },
   { key: "sponsorWillingness", short: "Sponsor", label: "Sponsorship" },
+  { key: "internshipWillingness", short: "Internship", label: "Internship support" },
+  { key: "placementWillingness", short: "Placement", label: "Placement support" },
 ];
 
 export const PROGRAM_KINDS = [
@@ -133,6 +135,8 @@ export const PROGRAM_KINDS = [
   { value: "experience_sharing", label: "Experience sharing" },
   { value: "funding", label: "Funding" },
   { value: "sponsorship", label: "Sponsorship" },
+  { value: "internship", label: "Internship support" },
+  { value: "placement", label: "Placement support" },
 ];
 
 export const PROGRAM_STATUS = [
