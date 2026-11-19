@@ -137,6 +137,22 @@ function txt(value) {
   return { type: String, value: value == null || value === "" ? "—" : String(value) };
 }
 
+/** All remarks for one alumni, newest first, one per line: "19 Nov 2026 · Name: text". */
+function remarksText(person) {
+  const list = Array.isArray(person?.remarks) ? [...person.remarks] : [];
+  const ms = (r) => r?.at?.toMillis?.() ?? (r?.at ? new Date(r.at).getTime() : 0);
+  return list
+    .sort((a, b) => ms(b) - ms(a))
+    .map((r) => {
+      const t = ms(r);
+      const when = t
+        ? new Date(t).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })
+        : "";
+      return [when, r.byName].filter(Boolean).join(" · ") + ": " + (r.text || "");
+    })
+    .join("\n");
+}
+
 function num(value) {
   return { type: Number, value: Number(value) || 0, align: "right" };
 }
@@ -230,8 +246,9 @@ export async function downloadNetworkExcel({ people = [] } = {}) {
       "Response",
       ...NETWORK_ACTIVITY_FIELDS.map((f) => f.label),
       "Notes",
+      "Remarks",
     ],
-    [6, 28, 28, 12, 14, 28, 24, 20, 18, 18, 24, 14, 14, 14, 14, 14, 14, 36],
+    [6, 28, 28, 12, 14, 28, 24, 20, 18, 18, 24, 14, 14, 14, 14, 14, 14, 36, 60],
     people.map((p, i) => [
       num(i + 1),
       txt(p.alumniName),
@@ -248,6 +265,7 @@ export async function downloadNetworkExcel({ people = [] } = {}) {
       txt(labelOf(NETWORK_CONNECT_STATUS, p.connectStatus)),
       ...NETWORK_ACTIVITY_FIELDS.map((f) => txt(activityLabel(p[f.key]))),
       txt(p.notes),
+      txt(remarksText(p)),
     ])
   );
   await writeExcelFile([list], { fileName: `alumni-network-${stampFile()}.xlsx` });

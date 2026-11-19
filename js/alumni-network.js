@@ -1,10 +1,13 @@
 import { db } from "./firebase-config.js";
 import {
   addDoc,
+  arrayRemove,
+  arrayUnion,
   collection,
   doc,
   getDocs,
   serverTimestamp,
+  Timestamp,
   updateDoc,
 } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-firestore.js";
 import { withSession } from "./auth.js";
@@ -116,6 +119,70 @@ function phoneKey(value) {
 
 function actorName(session) {
   return session?.displayName || session?.username || session?.userId || "";
+}
+
+const REMARK_MAX_LENGTH = 1000;
+
+function remarkMillis(remark) {
+  return remark?.at?.toMillis?.() ?? (remark?.at ? new Date(remark.at).getTime() : 0);
+}
+
+/** Remarks for one alumni, newest first. */
+function remarksOf(person) {
+  return (Array.isArray(person?.remarks) ? [...person.remarks] : []).sort(
+    (a, b) => remarkMillis(b) - remarkMillis(a)
+  );
+}
+
+function remarkWhen(remark) {
+  const ms = remarkMillis(remark);
+  if (!ms) return "";
+  return new Date(ms).toLocaleString("en-IN", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
+function remarksPanelHtml(person) {
+  const list = remarksOf(person);
+  return `
+    <div class="an-remarks" data-an-remarks-panel="${escapeHtml(person.id)}">
+      <div class="an-remarks__add">
+        <label for="anRemarkText" class="an-remarks__label">Add a remark for ${escapeHtml(person.alumniName || "this alumni")}</label>
+        <textarea id="anRemarkText" rows="2" maxlength="${REMARK_MAX_LENGTH}" placeholder="e.g. Called on 19 Nov — will confirm the talk date after Diwali."></textarea>
+        <div class="an-remarks__actions">
+          <span class="form-hint">Ctrl + Enter to save</span>
+          <button type="button" class="btn btn--ghost btn--sm" data-an-remarks-close="1">Close</button>
+          <button type="button" class="btn btn--primary btn--sm" data-an-remark-add="${escapeHtml(person.id)}">Save remark</button>
+        </div>
+      </div>
+      ${
+        list.length
+          ? `<ul class="an-remarks__list">
+              ${list
+                .map(
+                  (r) => `
+                <li class="an-remarks__item">
+                  <p class="an-remarks__text">${escapeHtml(r.text || "")}</p>
+                  <div class="an-remarks__meta">
+                    <span>${escapeHtml([remarkWhen(r), r.byName].filter(Boolean).join(" · "))}</span>
+                    <button type="button" class="an-remarks__delete" data-an-remark-delete="${escapeHtml(r.id || "")}" data-an-remark-person="${escapeHtml(person.id)}" aria-label="Delete this remark">Delete</button>
+                  </div>
+                </li>`
+                )
+                .join("")}
+            </ul>`
+          : `<p class="form-hint an-remarks__empty">No remarks yet.</p>`
+      }
+      ${
+        person.notes
+          ? `<p class="form-hint an-remarks__legacy"><strong>Notes (from Edit):</strong> ${escapeHtml(person.notes)}</p>`
+          : ""
+      }
+    </div>`;
 }
 
 function emptyPerson() {
@@ -317,6 +384,7 @@ function filterNetworkPeople(people, filters = {}) {
       p.jobSector,
       p.referredByName,
       p.notes,
+      ...remarksOf(p).map((r) => r.text),
       deptLabel(p.department),
       p.batch,
     ]
@@ -673,12 +741,21 @@ function directoryTabHtml(state) {
           ${
             rows.length
               ? rows
-                  .map((p) => `
-            <tr>
+                  .map((p) => {
+                    const remarks = remarksOf(p);
+                    const latest = remarks[0];
+                    const open = state.remarksOpenId === p.id;
+                    return `
+            <tr class="${open ? "an-row--remarks-open" : ""}">
               <td>
                 <strong>${escapeHtml(p.alumniName || "—")}</strong>
                 <div class="form-hint">${escapeHtml(deptLabel(p.department))} · ${escapeHtml(String(p.batch || "—"))}</div>
                 <div class="form-hint">${escapeHtml(p.whatsapp || p.mobile || "—")}</div>
+                ${
+                  latest
+                    ? `<div class="an-remark-latest" title="${escapeHtml(latest.text || "")}">${escapeHtml(latest.text || "")}</div>`
+                    : ""
+                }
               </td>
               <td>
                 ${escapeHtml(p.jobRole || p.company || "—")}
@@ -708,9 +785,11 @@ function directoryTabHtml(state) {
                 <button type="button" class="btn btn--ghost btn--sm" data-an-edit="${escapeHtml(p.id)}">Edit</button>
                 <button type="button" class="btn btn--ghost btn--sm" data-an-via="network:${escapeHtml(p.id)}">Connect via</button>
                 <button type="button" class="btn btn--ghost btn--sm" data-an-program-for="${escapeHtml(p.id)}">Programme</button>
+                <button type="button" class="btn btn--ghost btn--sm${open ? " an-remarks-btn--open" : ""}" data-an-remarks="${escapeHtml(p.id)}" aria-expanded="${open}">Remarks${remarks.length ? ` (${remarks.length})` : ""}</button>
               </td>
-            </tr>`
-                  )
+            </tr>
+            ${open ? `<tr class="an-remarks-row"><td colspan="9">${remarksPanelHtml(p)}</td></tr>` : ""}`;
+                  })
                   .join("")
               : `<tr><td colspan="9" class="empty-state">No network alumni yet. Start from Event Desk registered students.</td></tr>`
           }
@@ -1086,6 +1165,7 @@ export async function mountAdminAlumniNetwork(wrap, { session, notify } = {}) {
     personDraft: null,
     programDraft: null,
     referrerQuery: "",
+    remarksOpenId: "",
     loaded: false,
   };
 
@@ -1271,6 +1351,60 @@ export async function mountAdminAlumniNetwork(wrap, { session, notify } = {}) {
     }
   }
 
+  async function addRemark(personId) {
+    const person = state.people.find((p) => p.id === personId);
+    const box = document.getElementById("anRemarkText");
+    const text = String(box?.value || "").trim().slice(0, REMARK_MAX_LENGTH);
+    if (!person) return;
+    if (!text) {
+      toast("Type a remark first.", "error");
+      box?.focus();
+      return;
+    }
+    const remark = {
+      id: crypto.randomUUID(),
+      text,
+      byName: actorName(session),
+      byUserId: session?.userId || "",
+      at: Timestamp.now(),
+    };
+    const btn = wrap.querySelector("[data-an-remark-add]");
+    if (btn) btn.disabled = true;
+    try {
+      await updateDoc(
+        doc(db, ALUMNI_NETWORK_COLLECTION, personId),
+        withSession({ remarks: arrayUnion(remark), updatedAt: serverTimestamp() })
+      );
+      person.remarks = [...(person.remarks || []), remark];
+      toast("Remark saved.", "success");
+      render();
+      document.getElementById("anRemarkText")?.focus();
+    } catch (err) {
+      console.error(err);
+      toast("Could not save the remark.", "error");
+      if (btn) btn.disabled = false;
+    }
+  }
+
+  async function deleteRemark(personId, remarkId) {
+    const person = state.people.find((p) => p.id === personId);
+    const remark = (person?.remarks || []).find((r) => r.id === remarkId);
+    if (!person || !remark) return;
+    if (!window.confirm(`Delete this remark?\n\n"${remark.text}"`)) return;
+    try {
+      await updateDoc(
+        doc(db, ALUMNI_NETWORK_COLLECTION, personId),
+        withSession({ remarks: arrayRemove(remark), updatedAt: serverTimestamp() })
+      );
+      person.remarks = person.remarks.filter((r) => r !== remark);
+      toast("Remark deleted.", "success");
+      render();
+    } catch (err) {
+      console.error(err);
+      toast("Could not delete the remark.", "error");
+    }
+  }
+
   async function patchPerson(id, field, value) {
     const person = state.people.find((p) => p.id === id);
     if (!person) return;
@@ -1307,7 +1441,7 @@ export async function mountAdminAlumniNetwork(wrap, { session, notify } = {}) {
 
   async function runReport(kind) {
     try {
-      const mod = await import("./alumni-network-report.js?v=er30");
+      const mod = await import("./alumni-network-report.js?v=er34");
       const generatedBy = actorName(session);
       if (kind === "network-pdf") await mod.downloadNetworkPdf({ people: state.people, generatedBy });
       if (kind === "network-xlsx") await mod.downloadNetworkExcel({ people: state.people, generatedBy });
@@ -1432,6 +1566,38 @@ export async function mountAdminAlumniNetwork(wrap, { session, notify } = {}) {
         render();
       });
     });
+    wrap.querySelectorAll("[data-an-remarks]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const id = btn.dataset.anRemarks;
+        state.remarksOpenId = state.remarksOpenId === id ? "" : id;
+        render();
+        if (state.remarksOpenId) document.getElementById("anRemarkText")?.focus();
+      });
+    });
+    wrap.querySelectorAll("[data-an-remarks-close]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        state.remarksOpenId = "";
+        render();
+      });
+    });
+    wrap.querySelectorAll("[data-an-remark-add]").forEach((btn) => {
+      btn.addEventListener("click", () => addRemark(btn.dataset.anRemarkAdd));
+    });
+    document.getElementById("anRemarkText")?.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault();
+        addRemark(state.remarksOpenId);
+      }
+      if (e.key === "Escape") {
+        state.remarksOpenId = "";
+        render();
+      }
+    });
+    wrap.querySelectorAll("[data-an-remark-delete]").forEach((btn) => {
+      btn.addEventListener("click", () =>
+        deleteRemark(btn.dataset.anRemarkPerson, btn.dataset.anRemarkDelete)
+      );
+    });
     wrap.querySelectorAll("[data-an-patch]").forEach((el) => {
       el.addEventListener("change", async () => {
         const toneFn = el.dataset.anField === "connectStatus" ? connectTone : activityTone;
@@ -1538,8 +1704,20 @@ export async function mountAdminAlumniNetwork(wrap, { session, notify } = {}) {
       setVal("anAcSector", filters.jobSector);
     }
     bind();
+    fitRemarksPanel();
     restoreFocus(activeId, cursor);
   }
+
+  /** Keep the remarks panel as wide as the visible part of the table, not the whole scrolling table. */
+  function fitRemarksPanel() {
+    const panel = wrap.querySelector(".an-remarks");
+    const scroller = panel?.closest(".table-scroll");
+    if (!panel || !scroller) return;
+    const cell = panel.parentElement;
+    const pad = cell ? parseFloat(getComputedStyle(cell).paddingLeft) + parseFloat(getComputedStyle(cell).paddingRight) : 0;
+    panel.style.width = `${Math.max(280, scroller.clientWidth - pad)}px`;
+  }
+  window.addEventListener("resize", fitRemarksPanel);
 
   wrap.innerHTML = '<p class="empty-state">Loading alumni network…</p>';
   try {
