@@ -3004,6 +3004,61 @@
   white-space: nowrap;
 }
 
+.an-prio-chip--medium {
+  background: var(--purple-100);
+  color: var(--purple-700);
+}
+
+.an-prio-chip--low {
+  background: #fff;
+  color: var(--slate-500);
+  border: 1px solid var(--slate-200);
+  font-weight: 600;
+}
+
+/* Job now sits under the name instead of its own column */
+.an-job {
+  margin-top: 0.3rem;
+  font-size: 0.8rem;
+  color: var(--slate-700);
+}
+
+/* How many alumni this person has already brought into the network */
+.an-brought {
+  display: inline-block;
+  margin-top: 0.35rem;
+  padding: 0.08rem 0.5rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: #0f5132;
+  background: #d1fae5;
+  border-radius: 999px;
+}
+
+/* "Responded" / "Not contacted" need a little more room than the activity dropdowns */
+.an-dir-table .an-response-cell .table-status-select {
+  min-width: 8.4rem;
+}
+
+.ac-order {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-left: auto;
+  margin-right: 0.5rem;
+  font-size: 0.85rem;
+  color: var(--slate-700);
+}
+
+.ac-order select {
+  padding: 0.35rem 0.6rem;
+  font-family: inherit;
+  font-size: 0.85rem;
+  border: 1.5px solid var(--slate-200);
+  border-radius: 8px;
+  background: #fff;
+}
+
 .an-dir-table tr.an-row--high > td:first-child {
   box-shadow: inset 3px 0 0 var(--purple-700);
 }

@@ -10,7 +10,7 @@ import {
   NETWORK_PRIORITY,
   PROGRAM_KINDS,
   PROGRAM_STATUS,
-} from "./constants.js?v=er36";
+} from "./constants.js?v=er37";
 
 const INK = {
   navy: [18, 18, 42],

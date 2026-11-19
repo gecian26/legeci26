@@ -53,7 +53,7 @@ import {
   statusBadgeHtml,
 } from "../js/alumni-connect.js?v=er2";
 import { mountAdminEventDesk } from "../js/event-registration.js?v=er33";
-import { mountAdminAlumniNetwork } from "../js/alumni-network.js?v=er36";
+import { mountAdminAlumniNetwork, loadNetworkPeople, networkPriorityLookup } from "../js/alumni-network.js?v=er37";
 import { loadLeaderboardPanel } from "../js/leaderboard.js";
 import { downloadAlumniContactsPdf } from "../js/alumni-contacts-pdf.js";
 import {
@@ -90,6 +90,8 @@ let adminAlumniFilterBound = false;
 let cachedAdminAlumniFilters = {};
 let cachedAdminAlumniFeeLabel = "Not set";
 let cachedAdminFilteredContacts = [];
+/** contact -> network priority info (or null); refreshed with the Alumni Connect page. */
+let adminNetworkPriorityOf = () => null;
 
 initAuthGuard([ROLES.ADMIN], (session) => {
   initPortal(session);
@@ -1224,11 +1226,16 @@ async function loadAdminAlumniDashboard() {
   if (!wrap) return;
   wrap.innerHTML = '<p class="empty-state">Loading...</p>';
   try {
-    const [contacts, regSettings] = await Promise.all([
+    const [contacts, regSettings, networkPeople] = await Promise.all([
       loadAllAlumniContacts(),
       loadRegistrationSettings(),
+      loadNetworkPeople().catch((err) => {
+        console.error(err);
+        return [];
+      }),
     ]);
     cachedAdminAlumniContacts = contacts;
+    adminNetworkPriorityOf = networkPriorityLookup(networkPeople);
     renderAdminAlumniDashboard(regSettings);
   } catch (err) {
     console.error(err);
@@ -1271,6 +1278,13 @@ function renderAdminAlumniDashboard(regSettings) {
       <div>
         <div class="ac-dashboard__toolbar" style="margin-bottom:0.5rem;">
           <h3 class="ac-dashboard__subtitle" style="margin:0;">Filtered contacts</h3>
+          <label class="ac-order">
+            <span>Order</span>
+            <select id="admAcOrder">
+              <option value="">Name (A–Z)</option>
+              <option value="priority">Network priority first</option>
+            </select>
+          </label>
           <button type="button" class="btn btn--ghost btn--sm" id="admAcDownloadPdfSecondary">
             Download contacts PDF
           </button>
@@ -1290,7 +1304,9 @@ function renderAdminAlumniDashboard(regSettings) {
   if (!adminAlumniFilterBound) {
     adminAlumniFilterBound = true;
     wrap.addEventListener("click", async (e) => {
-      if (e.target.id === "admAcApplyFilters") {
+      if (e.target.id === "admAcOrder") {
+        // handled by the change listener below
+      } else if (e.target.id === "admAcApplyFilters") {
         applyAdminAlumniFilters();
       } else if (e.target.id === "admAcResetFilters") {
         [
@@ -1313,6 +1329,9 @@ function renderAdminAlumniDashboard(regSettings) {
       ) {
         await handleAlumniContactsPdfDownload(e.target.closest("button") || e.target);
       }
+    });
+    wrap.addEventListener("change", (e) => {
+      if (e.target.id === "admAcOrder") applyAdminAlumniFilters();
     });
     wrap.addEventListener("keydown", (e) => {
       if (e.key === "Enter" && e.target.closest("#admAcFilters")) {
@@ -1354,6 +1373,17 @@ function applyAdminAlumniFilters() {
   const filters = readAlumniFilters("admAc", { showDepartment: true });
   const all = cachedAdminAlumniContacts || [];
   const filtered = filterAlumniContacts(all, filters);
+  if (document.getElementById("admAcOrder")?.value === "priority") {
+    const info = (c) => adminNetworkPriorityOf(c);
+    const highs = (c) => info(c)?.high.length || 0;
+    filtered.sort(
+      (a, b) =>
+        (info(b)?.rank || 0) - (info(a)?.rank || 0) ||
+        highs(b) - highs(a) ||
+        (info(b) ? 1 : 0) - (info(a) ? 1 : 0) ||
+        String(a.alumniName || "").localeCompare(String(b.alumniName || ""))
+    );
+  }
   cachedAdminAlumniFilters = filters;
   cachedAdminFilteredContacts = filtered;
   const overallStats = summarizeContacts(all);
@@ -1387,6 +1417,20 @@ function applyAdminAlumniFilters() {
   tableEl.innerHTML = adminContactsTableHtml(filtered);
 }
 
+/** Network priorities for one Alumni Connect contact, set on the Alumni Network page. */
+function adminNetworkPriorityHtml(contact) {
+  const info = adminNetworkPriorityOf(contact);
+  if (!info) return '<span class="form-hint" style="margin:0;">—</span>';
+  const chips = [
+    ...info.high.map((s) => `<span class="an-prio-chip" title="High priority">★ ${escapeHtml(s)}</span>`),
+    ...info.medium.map((s) => `<span class="an-prio-chip an-prio-chip--medium" title="Medium priority">★ ${escapeHtml(s)}</span>`),
+    ...info.low.map((s) => `<span class="an-prio-chip an-prio-chip--low" title="Low priority">${escapeHtml(s)}</span>`),
+  ];
+  return chips.length
+    ? `<div class="an-prio-chips" style="margin:0;">${chips.join("")}</div>`
+    : '<span class="form-hint" style="margin:0;">In network</span>';
+}
+
 function adminContactsTableHtml(contacts) {
   if (!contacts.length) {
     return '<p class="empty-state">No alumni contacts match the current filters.</p>';
@@ -1404,6 +1448,7 @@ function adminContactsTableHtml(contacts) {
           <th>Passout</th>
           <th>Willingness</th>
           <th>Registration</th>
+          <th>Network priority</th>
           <th>Volunteer</th>
         </tr>
       </thead>
@@ -1422,6 +1467,7 @@ function adminContactsTableHtml(contacts) {
             <td>${escapeHtml(c.batch || c.passoutYear || "—")}</td>
             <td>${statusBadgeHtml("willingness", c.willingness)}</td>
             <td>${statusBadgeHtml("registration", c.registrationStatus)}</td>
+            <td>${adminNetworkPriorityHtml(c)}</td>
             <td>${escapeHtml(c.createdByName || c.createdByUserId || "—")}</td>
           </tr>`
           )

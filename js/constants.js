@@ -128,6 +128,8 @@ export const NETWORK_ACTIVITY_FIELDS = [
   { key: "sponsorWillingness", short: "Sponsor", label: "Sponsorship" },
   { key: "internshipWillingness", short: "Internship", label: "Internship support" },
   { key: "placementWillingness", short: "Placement", label: "Placement support" },
+  // Someone who can reach and bring in many other alumni (batch groups, company circles, chapters).
+  { key: "connectorWillingness", short: "Connector", label: "Alumni connector" },
 ];
 
 /**

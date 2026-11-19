@@ -26,12 +26,13 @@ import {
   PROGRAM_STATUS,
   escapeHtml,
   formatDateShort,
-} from "./constants.js?v=er36";
+} from "./constants.js?v=er37";
 import {
   alumniFiltersHtml,
   filterAlumniContacts,
   jobSectorOptionsHtml,
   loadAllAlumniContacts,
+  normalizePersonName,
   normalizePhoneDigits,
   optionsHtml,
   passoutYearSearchFieldHtml,
@@ -152,6 +153,61 @@ function prioritySelectHtml(person, field) {
   const value = priorityOf(person, field.key);
   const label = `Priority for ${field.label.toLowerCase()}`;
   return `<select class="an-prio an-prio--${value || "none"}" data-an-prio="${escapeHtml(person.id)}" data-an-field="${escapeHtml(field.key)}" title="${escapeHtml(label)}" aria-label="${escapeHtml(label)}">${priorityOptionsHtml(value)}</select>`;
+}
+
+/** True when network person q was connected via network person p. */
+function wasBroughtInBy(q, p) {
+  if (q.id === p.id) return false;
+  if (q.referredById && (q.referredById === p.id || (p.originContactId && q.referredById === p.originContactId))) {
+    return true;
+  }
+  const qPhone = phoneKey(q.referredByPhone);
+  const pPhone = phoneKey(p.whatsapp || p.mobile);
+  if (qPhone && pPhone) return qPhone.slice(-10) === pPhone.slice(-10);
+  if (!q.referredById && !qPhone && q.referredByName && p.alumniName) {
+    return normalizePersonName(q.referredByName) === normalizePersonName(p.alumniName);
+  }
+  return false;
+}
+
+/** Map of network person id -> people they brought in (via "Connected via"). */
+function broughtInIndex(people) {
+  const map = new Map();
+  for (const p of people || []) {
+    const list = (people || []).filter((q) => wasBroughtInBy(q, p));
+    if (list.length) map.set(p.id, list);
+  }
+  return map;
+}
+
+/**
+ * For other pages (Alumni Connect): look up a contact's network priorities by
+ * Alumni Connect id or phone. Returns { rank, high: [short], medium: [short], low: [short] } or null.
+ */
+export function networkPriorityLookup(people) {
+  const byContact = new Map();
+  const byPhone = new Map();
+  for (const p of people || []) {
+    const info = {
+      personId: p.id,
+      rank: topPriorityRank(p),
+      high: NETWORK_ACTIVITY_FIELDS.filter((f) => priorityOf(p, f.key) === "high").map((f) => f.short),
+      medium: NETWORK_ACTIVITY_FIELDS.filter((f) => priorityOf(p, f.key) === "medium").map((f) => f.short),
+      low: NETWORK_ACTIVITY_FIELDS.filter((f) => priorityOf(p, f.key) === "low").map((f) => f.short),
+    };
+    if (p.originKind === "alumni_connect" && p.originContactId) byContact.set(p.originContactId, info);
+    const phone = phoneKey(p.whatsapp || p.mobile).slice(-10);
+    if (phone.length === 10) byPhone.set(phone, info);
+  }
+  return (contact) => {
+    if (!contact) return null;
+    if (byContact.has(contact.id)) return byContact.get(contact.id);
+    for (const value of [contact.whatsapp, contact.mobile, contact.phone]) {
+      const phone = phoneKey(value).slice(-10);
+      if (phone.length === 10 && byPhone.has(phone)) return byPhone.get(phone);
+    }
+    return null;
+  };
 }
 
 const REMARK_MAX_LENGTH = 1000;
@@ -387,6 +443,7 @@ function summarizeNetwork(people, programs) {
     sponsor: willing("sponsorWillingness"),
     internship: willing("internshipWillingness"),
     placement: willing("placementWillingness"),
+    connector: willing("connectorWillingness"),
     highPriority: list.filter((p) => highPrioritySupports(p).length > 0).length,
     programs: (programs || []).length,
     openPrograms: (programs || []).filter((p) => p.status === "planned" || p.status === "confirmed").length,
@@ -540,6 +597,7 @@ function statsHtml(stats) {
     { label: "Sponsorship", value: stats.sponsor, tone: "good" },
     { label: "Internship support", value: stats.internship, tone: "good" },
     { label: "Placement support", value: stats.placement, tone: "good" },
+    { label: "Alumni connectors", value: stats.connector, tone: "good" },
     { label: "High priority alumni", value: stats.highPriority, tone: "warn" },
     { label: "Open programmes", value: stats.openPrograms, tone: "neutral" },
   ];
@@ -730,6 +788,13 @@ function connectTabHtml(state) {
 
 function directoryTabHtml(state) {
   const rows = filterNetworkPeople(state.people, state.dirFilters);
+  const brought = broughtInIndex(state.people);
+  const broughtCount = (p) => brought.get(p.id)?.length || 0;
+  if (state.dirFilters.order === "brought") {
+    rows.sort(
+      (a, b) => broughtCount(b) - broughtCount(a) || String(a.alumniName || "").localeCompare(String(b.alumniName || ""))
+    );
+  }
   if (state.dirFilters.order === "priority") {
     const key = state.dirFilters.activityKey;
     const highs = (p) => (key ? (priorityOf(p, key) === "high" ? 1 : 0) : highPrioritySupports(p).length);
@@ -795,6 +860,7 @@ function directoryTabHtml(state) {
           <select id="anDirOrder">
             <option value="" ${state.dirFilters.order ? "" : "selected"}>Name (A–Z)</option>
             <option value="priority" ${state.dirFilters.order === "priority" ? "selected" : ""}>Priority first</option>
+            <option value="brought" ${state.dirFilters.order === "brought" ? "selected" : ""}>Most alumni brought in</option>
           </select>
         </div>`;
   return `
@@ -811,7 +877,6 @@ function directoryTabHtml(state) {
         <thead>
           <tr>
             <th>Alumni</th>
-            <th>Job</th>
             <th>Connected via</th>
             <th>Response</th>
             ${NETWORK_ACTIVITY_FIELDS.map((f) => `<th>${escapeHtml(f.short)}</th>`).join("")}
@@ -835,6 +900,16 @@ function directoryTabHtml(state) {
                 <div class="form-hint">${escapeHtml(deptLabel(p.department))} · ${escapeHtml(String(p.batch || "—"))}</div>
                 <div class="form-hint">${escapeHtml(p.whatsapp || p.mobile || "—")}</div>
                 ${
+                  p.jobRole || p.company || p.jobSector
+                    ? `<div class="an-job">${escapeHtml([p.jobRole, p.company].filter(Boolean).join(" · ") || p.jobSector)}</div>`
+                    : ""
+                }
+                ${
+                  broughtCount(p)
+                    ? `<div class="an-brought" title="Connected via ${escapeHtml(p.alumniName || "")}: ${escapeHtml(brought.get(p.id).map((q) => q.alumniName).join(", "))}">Brought in ${broughtCount(p)} alumni</div>`
+                    : ""
+                }
+                ${
                   highs.length
                     ? `<div class="an-prio-chips" title="High priority for these supports">${highs.map((f) => `<span class="an-prio-chip">★ ${escapeHtml(f.short)}</span>`).join("")}</div>`
                     : ""
@@ -846,14 +921,10 @@ function directoryTabHtml(state) {
                 }
               </td>
               <td>
-                ${escapeHtml(p.jobRole || p.company || "—")}
-                <div class="form-hint">${escapeHtml(p.company && p.jobRole ? p.company : p.jobSector || "")}</div>
-              </td>
-              <td>
                 ${p.referredByName ? escapeHtml(p.referredByName) : '<span class="form-hint">—</span>'}
                 <div class="form-hint">${escapeHtml(originLabel(p.originKind))}</div>
               </td>
-              <td>${statusSelectHtml({
+              <td class="an-response-cell">${statusSelectHtml({
                 field: "connectStatus",
                 value: p.connectStatus || "not_contacted",
                 options: NETWORK_CONNECT_STATUS,
@@ -876,10 +947,10 @@ function directoryTabHtml(state) {
                 <button type="button" class="btn btn--ghost btn--sm${open ? " an-remarks-btn--open" : ""}" data-an-remarks="${escapeHtml(p.id)}" aria-expanded="${open}">Remarks${remarks.length ? ` (${remarks.length})` : ""}</button>
               </td>
             </tr>
-            ${open ? `<tr class="an-remarks-row"><td colspan="${5 + NETWORK_ACTIVITY_FIELDS.length}">${remarksPanelHtml(p)}</td></tr>` : ""}`;
+            ${open ? `<tr class="an-remarks-row"><td colspan="${4 + NETWORK_ACTIVITY_FIELDS.length}">${remarksPanelHtml(p)}</td></tr>` : ""}`;
                   })
                   .join("")
-              : `<tr><td colspan="${5 + NETWORK_ACTIVITY_FIELDS.length}" class="empty-state">No network alumni yet. Start from Event Desk registered students.</td></tr>`
+              : `<tr><td colspan="${4 + NETWORK_ACTIVITY_FIELDS.length}" class="empty-state">No network alumni yet. Start from Event Desk registered students.</td></tr>`
           }
         </tbody>
       </table>
@@ -1555,7 +1626,7 @@ export async function mountAdminAlumniNetwork(wrap, { session, notify } = {}) {
 
   async function runReport(kind) {
     try {
-      const mod = await import("./alumni-network-report.js?v=er36");
+      const mod = await import("./alumni-network-report.js?v=er37");
       const generatedBy = actorName(session);
       if (kind === "network-pdf") await mod.downloadNetworkPdf({ people: state.people, generatedBy });
       if (kind === "network-xlsx") await mod.downloadNetworkExcel({ people: state.people, generatedBy });
