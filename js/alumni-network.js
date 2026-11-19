@@ -20,11 +20,13 @@ import {
   NETWORK_ACTIVITY_WILLINGNESS,
   NETWORK_CONNECT_STATUS,
   NETWORK_ORIGIN_KINDS,
+  NETWORK_PRIORITY,
+  networkPriorityRank,
   PROGRAM_KINDS,
   PROGRAM_STATUS,
   escapeHtml,
   formatDateShort,
-} from "./constants.js?v=er35";
+} from "./constants.js?v=er36";
 import {
   alumniFiltersHtml,
   filterAlumniContacts,
@@ -119,6 +121,37 @@ function phoneKey(value) {
 
 function actorName(session) {
   return session?.displayName || session?.username || session?.userId || "";
+}
+
+/** Priority of one support for one alumni ("high" | "medium" | "low" | ""). */
+function priorityOf(person, key) {
+  return person?.priorities?.[key] || "";
+}
+
+/** Highest priority rank for this alumni: for one support, or across all supports. */
+function topPriorityRank(person, key = "") {
+  const keys = key ? [key] : NETWORK_ACTIVITY_FIELDS.map((f) => f.key);
+  return Math.max(0, ...keys.map((k) => networkPriorityRank(priorityOf(person, k))));
+}
+
+function highPrioritySupports(person) {
+  return NETWORK_ACTIVITY_FIELDS.filter((f) => priorityOf(person, f.key) === "high");
+}
+
+function priorityOptionsHtml(value, suffix = "") {
+  return [
+    `<option value="" ${value ? "" : "selected"}>+ Priority</option>`,
+    ...NETWORK_PRIORITY.map(
+      (p) =>
+        `<option value="${p.value}" ${value === p.value ? "selected" : ""}>${p.value === "low" ? "" : "★ "}${escapeHtml(p.label)}${suffix}</option>`
+    ),
+  ].join("");
+}
+
+function prioritySelectHtml(person, field) {
+  const value = priorityOf(person, field.key);
+  const label = `Priority for ${field.label.toLowerCase()}`;
+  return `<select class="an-prio an-prio--${value || "none"}" data-an-prio="${escapeHtml(person.id)}" data-an-field="${escapeHtml(field.key)}" title="${escapeHtml(label)}" aria-label="${escapeHtml(label)}">${priorityOptionsHtml(value)}</select>`;
 }
 
 const REMARK_MAX_LENGTH = 1000;
@@ -306,6 +339,9 @@ function personPayload(form, session, existing = {}) {
     referredBySource: form.referredBySource || "",
     connectStatus: form.connectStatus || "not_contacted",
     ...Object.fromEntries(NETWORK_ACTIVITY_FIELDS.map((f) => [f.key, form[f.key] || "no_response"])),
+    priorities: Object.fromEntries(
+      NETWORK_ACTIVITY_FIELDS.map((f) => [f.key, form.priorities?.[f.key] ?? existing.priorities?.[f.key] ?? ""])
+    ),
     createdByUserId: existing.createdByUserId || session?.userId || "",
     createdByName: existing.createdByName || actorName(session),
     updatedAt: serverTimestamp(),
@@ -351,6 +387,7 @@ function summarizeNetwork(people, programs) {
     sponsor: willing("sponsorWillingness"),
     internship: willing("internshipWillingness"),
     placement: willing("placementWillingness"),
+    highPriority: list.filter((p) => highPrioritySupports(p).length > 0).length,
     programs: (programs || []).length,
     openPrograms: (programs || []).filter((p) => p.status === "planned" || p.status === "confirmed").length,
   };
@@ -366,6 +403,13 @@ function filterNetworkPeople(people, filters = {}) {
       if (filters.originKind && (p.originKind || "") !== filters.originKind) return false;
       if (filters.activityKey && filters.activityValue && (p[filters.activityKey] || "") !== filters.activityValue) {
         return false;
+      }
+      if (filters.priority) {
+        const rank = topPriorityRank(p, filters.activityKey);
+        if (filters.priority === "high" && rank < 3) return false;
+        if (filters.priority === "medium_up" && rank < 2) return false;
+        if (filters.priority === "any" && rank < 1) return false;
+        if (filters.priority === "none" && rank > 0) return false;
       }
       return true;
     }),
@@ -475,6 +519,13 @@ function legendHtml() {
         ${badgeHtml("red", "Not willing")}
         ${badgeHtml("gray", "No reply")}
       </div>
+      <div>
+        <strong>Priority</strong>
+        <span class="an-prio-key an-prio--high">★ High</span>
+        <span class="an-prio-key an-prio--medium">★ Medium</span>
+        <span class="an-prio-key an-prio--low">Low</span>
+        <span class="an-legend__note">who to pursue first for each support</span>
+      </div>
     </div>`;
 }
 
@@ -489,6 +540,7 @@ function statsHtml(stats) {
     { label: "Sponsorship", value: stats.sponsor, tone: "good" },
     { label: "Internship support", value: stats.internship, tone: "good" },
     { label: "Placement support", value: stats.placement, tone: "good" },
+    { label: "High priority alumni", value: stats.highPriority, tone: "warn" },
     { label: "Open programmes", value: stats.openPrograms, tone: "neutral" },
   ];
   return `
@@ -678,6 +730,16 @@ function connectTabHtml(state) {
 
 function directoryTabHtml(state) {
   const rows = filterNetworkPeople(state.people, state.dirFilters);
+  if (state.dirFilters.order === "priority") {
+    const key = state.dirFilters.activityKey;
+    const highs = (p) => (key ? (priorityOf(p, key) === "high" ? 1 : 0) : highPrioritySupports(p).length);
+    rows.sort(
+      (a, b) =>
+        topPriorityRank(b, key) - topPriorityRank(a, key) ||
+        highs(b) - highs(a) ||
+        String(a.alumniName || "").localeCompare(String(b.alumniName || ""))
+    );
+  }
   const extra = `
         <div class="form-group">
           <label for="anDirStatus">Response</label>
@@ -713,11 +775,32 @@ function directoryTabHtml(state) {
             <option value="">All</option>
             ${optionsHtml(NETWORK_ACTIVITY_WILLINGNESS, state.dirFilters.activityValue || "")}
           </select>
+        </div>
+        <div class="form-group">
+          <label for="anDirPriority">Priority</label>
+          <select id="anDirPriority">
+            ${[
+              ["", "Any priority"],
+              ["high", "High"],
+              ["medium_up", "High or medium"],
+              ["any", "Has a priority"],
+              ["none", "No priority set"],
+            ]
+              .map(([v, l]) => `<option value="${v}" ${(state.dirFilters.priority || "") === v ? "selected" : ""}>${l}</option>`)
+              .join("")}
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="anDirOrder">Order</label>
+          <select id="anDirOrder">
+            <option value="" ${state.dirFilters.order ? "" : "selected"}>Name (A–Z)</option>
+            <option value="priority" ${state.dirFilters.order === "priority" ? "selected" : ""}>Priority first</option>
+          </select>
         </div>`;
   return `
     <div class="an-dir-toolbar">
       <p class="form-hint" style="margin:0;">
-        People you are actively connecting after LEGECI. Colours show response and willingness for talks, sharing, funding, and sponsorship.
+        People you are actively connecting after LEGECI. Colours show response and willingness for each support; ★ marks who to pursue first. Choose an Activity to filter and order by that support's priority.
       </p>
       <button type="button" class="btn btn--primary btn--sm" data-an-add="manual">Add alumni</button>
     </div>
@@ -743,12 +826,19 @@ function directoryTabHtml(state) {
                     const remarks = remarksOf(p);
                     const latest = remarks[0];
                     const open = state.remarksOpenId === p.id;
+                    const highs = highPrioritySupports(p);
+                    const rowClass = [open ? "an-row--remarks-open" : "", highs.length ? "an-row--high" : ""].filter(Boolean).join(" ");
                     return `
-            <tr class="${open ? "an-row--remarks-open" : ""}">
+            <tr class="${rowClass}">
               <td>
                 <strong>${escapeHtml(p.alumniName || "—")}</strong>
                 <div class="form-hint">${escapeHtml(deptLabel(p.department))} · ${escapeHtml(String(p.batch || "—"))}</div>
                 <div class="form-hint">${escapeHtml(p.whatsapp || p.mobile || "—")}</div>
+                ${
+                  highs.length
+                    ? `<div class="an-prio-chips" title="High priority for these supports">${highs.map((f) => `<span class="an-prio-chip">★ ${escapeHtml(f.short)}</span>`).join("")}</div>`
+                    : ""
+                }
                 ${
                   latest
                     ? `<div class="an-remark-latest" title="${escapeHtml(latest.text || "")}">${escapeHtml(latest.text || "")}</div>`
@@ -771,13 +861,13 @@ function directoryTabHtml(state) {
                 dataset: `data-an-patch="${escapeHtml(p.id)}"`,
               })}</td>
               ${NETWORK_ACTIVITY_FIELDS.map(
-                (f) => `<td>${statusSelectHtml({
+                (f) => `<td class="an-activity-cell">${statusSelectHtml({
                   field: f.key,
                   value: p[f.key] || "no_response",
                   options: NETWORK_ACTIVITY_WILLINGNESS,
                   toneFn: activityTone,
                   dataset: `data-an-patch="${escapeHtml(p.id)}"`,
-                })}</td>`
+                })}${prioritySelectHtml(p, f)}</td>`
               ).join("")}
               <td class="an-row-actions">
                 <button type="button" class="btn btn--ghost btn--sm" data-an-edit="${escapeHtml(p.id)}">Edit</button>
@@ -1025,6 +1115,9 @@ function personFormHtml(draft, state) {
             <select id="an_${f.key}" class="table-status-select table-status-select--${activityTone(p[f.key] || "no_response")}">
               ${optionsHtml(NETWORK_ACTIVITY_WILLINGNESS, p[f.key] || "no_response")}
             </select>
+            <select id="anPrio_${f.key}" class="an-prio an-prio--${priorityOf(p, f.key) || "none"}" aria-label="Priority for ${escapeHtml(f.label.toLowerCase())}">
+              ${priorityOptionsHtml(priorityOf(p, f.key), " priority")}
+            </select>
           </div>`
         ).join("")}
       </div>
@@ -1207,6 +1300,8 @@ export async function mountAdminAlumniNetwork(wrap, { session, notify } = {}) {
       originKind: document.getElementById("anDirOrigin")?.value || "",
       activityKey: document.getElementById("anDirActivity")?.value || "",
       activityValue: document.getElementById("anDirWilling")?.value || "",
+      priority: document.getElementById("anDirPriority")?.value || "",
+      order: document.getElementById("anDirOrder")?.value || "",
     };
   }
 
@@ -1237,6 +1332,9 @@ export async function mountAdminAlumniNetwork(wrap, { session, notify } = {}) {
       connectStatus: document.getElementById("anConnectStatus")?.value || "not_contacted",
       ...Object.fromEntries(
         NETWORK_ACTIVITY_FIELDS.map((f) => [f.key, document.getElementById(`an_${f.key}`)?.value || "no_response"])
+      ),
+      priorities: Object.fromEntries(
+        NETWORK_ACTIVITY_FIELDS.map((f) => [f.key, document.getElementById(`anPrio_${f.key}`)?.value || ""])
       ),
     };
   }
@@ -1402,6 +1500,25 @@ export async function mountAdminAlumniNetwork(wrap, { session, notify } = {}) {
     }
   }
 
+  async function patchPriority(id, key, value) {
+    const person = state.people.find((p) => p.id === id);
+    if (!person) return;
+    person.priorities = { ...(person.priorities || {}), [key]: value };
+    try {
+      await updateDoc(
+        doc(db, ALUMNI_NETWORK_COLLECTION, id),
+        withSession({ [`priorities.${key}`]: value, updatedAt: serverTimestamp() })
+      );
+      // Re-draw so the ★ chips, tile count and priority order stay in step.
+      render();
+    } catch (err) {
+      console.error(err);
+      toast("Could not update priority.", "error");
+      await refresh();
+      render();
+    }
+  }
+
   async function patchPerson(id, field, value) {
     const person = state.people.find((p) => p.id === id);
     if (!person) return;
@@ -1438,7 +1555,7 @@ export async function mountAdminAlumniNetwork(wrap, { session, notify } = {}) {
 
   async function runReport(kind) {
     try {
-      const mod = await import("./alumni-network-report.js?v=er35");
+      const mod = await import("./alumni-network-report.js?v=er36");
       const generatedBy = actorName(session);
       if (kind === "network-pdf") await mod.downloadNetworkPdf({ people: state.people, generatedBy });
       if (kind === "network-xlsx") await mod.downloadNetworkExcel({ people: state.people, generatedBy });
@@ -1491,7 +1608,7 @@ export async function mountAdminAlumniNetwork(wrap, { session, notify } = {}) {
       });
     });
 
-    ["anDirSearch", "anDirDepartment", "anDirBatch", "anDirStatus", "anDirOrigin", "anDirSector", "anDirActivity", "anDirWilling"].forEach((id) => {
+    ["anDirSearch", "anDirDepartment", "anDirBatch", "anDirStatus", "anDirOrigin", "anDirSector", "anDirActivity", "anDirWilling", "anDirPriority", "anDirOrder"].forEach((id) => {
       const el = document.getElementById(id);
       el?.addEventListener("input", () => {
         readDirFilters();
@@ -1600,6 +1717,17 @@ export async function mountAdminAlumniNetwork(wrap, { session, notify } = {}) {
         const toneFn = el.dataset.anField === "connectStatus" ? connectTone : activityTone;
         el.className = `table-status-select table-status-select--${toneFn(el.value)}`;
         await patchPerson(el.dataset.anPatch, el.dataset.anField, el.value);
+      });
+    });
+    wrap.querySelectorAll("[data-an-prio]").forEach((el) => {
+      el.addEventListener("change", async () => {
+        el.className = `an-prio an-prio--${el.value || "none"}`;
+        await patchPriority(el.dataset.anPrio, el.dataset.anField, el.value);
+      });
+    });
+    wrap.querySelectorAll("select[id^=anPrio_]").forEach((el) => {
+      el.addEventListener("change", () => {
+        el.className = `an-prio an-prio--${el.value || "none"}`;
       });
     });
     wrap.querySelectorAll("[data-an-prog-patch]").forEach((el) => {

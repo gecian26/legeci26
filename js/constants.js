@@ -130,6 +130,20 @@ export const NETWORK_ACTIVITY_FIELDS = [
   { key: "placementWillingness", short: "Placement", label: "Placement support" },
 ];
 
+/**
+ * How important it is to pursue one alumni for one kind of support.
+ * Separate from willingness: a "No reply" alumni can still be High priority to chase.
+ */
+export const NETWORK_PRIORITY = [
+  { value: "high", label: "High", rank: 3 },
+  { value: "medium", label: "Medium", rank: 2 },
+  { value: "low", label: "Low", rank: 1 },
+];
+
+export function networkPriorityRank(value) {
+  return NETWORK_PRIORITY.find((p) => p.value === value)?.rank || 0;
+}
+
 export const PROGRAM_KINDS = [
   { value: "technical_talk", label: "Technical talk" },
   { value: "experience_sharing", label: "Experience sharing" },

@@ -2910,6 +2910,108 @@
   max-width: 8.5rem;
 }
 
+/* Alumni Network — priority per support (who to pursue first) */
+.an-activity-cell {
+  vertical-align: top;
+}
+
+.an-prio {
+  display: block;
+  width: 100%;
+  max-width: 8.5rem;
+  min-width: 6.6rem;
+  margin-top: 0.35rem;
+  padding: 0.15rem 0.45rem;
+  font-family: inherit;
+  font-size: 0.74rem;
+  font-weight: 600;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  cursor: pointer;
+}
+
+.an-prio:focus {
+  outline: 2px solid var(--purple-500);
+  outline-offset: 1px;
+}
+
+/* Unset: quiet until hovered, so the table stays calm */
+.an-prio--none {
+  color: var(--slate-500);
+  background: transparent;
+  border: 1px dashed var(--slate-200);
+  font-weight: 500;
+  opacity: 0.75;
+}
+
+.an-prio--none:hover,
+.an-prio--none:focus {
+  opacity: 1;
+  border-color: var(--purple-500);
+}
+
+.an-prio--high {
+  background: var(--purple-700);
+  color: #fff;
+  border-color: var(--purple-700);
+}
+
+.an-prio--medium {
+  background: var(--purple-100);
+  color: var(--purple-700);
+  border-color: #d8c6ee;
+}
+
+.an-prio--low {
+  background: #fff;
+  color: var(--slate-500);
+  border-color: var(--slate-200);
+}
+
+.an-prio option {
+  background: #fff;
+  color: var(--slate-700);
+}
+
+.an-legend .an-prio-key {
+  display: inline-block;
+  padding: 0.12rem 0.6rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  border-radius: 999px;
+  border: 1px solid transparent;
+}
+
+.an-legend__note {
+  font-size: 0.78rem;
+  color: var(--slate-500);
+}
+
+.an-prio-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  margin-top: 0.4rem;
+}
+
+.an-prio-chip {
+  padding: 0.08rem 0.45rem;
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: #fff;
+  background: var(--purple-700);
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.an-dir-table tr.an-row--high > td:first-child {
+  box-shadow: inset 3px 0 0 var(--purple-700);
+}
+
+.an-activity-grid .an-prio {
+  max-width: none;
+}
+
 /* Alumni Network — remarks log */
 .an-remark-latest {
   margin-top: 0.4rem;

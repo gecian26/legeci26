@@ -7,9 +7,10 @@ import {
   NETWORK_ACTIVITY_WILLINGNESS,
   NETWORK_CONNECT_STATUS,
   NETWORK_ORIGIN_KINDS,
+  NETWORK_PRIORITY,
   PROGRAM_KINDS,
   PROGRAM_STATUS,
-} from "./constants.js?v=er35";
+} from "./constants.js?v=er36";
 
 const INK = {
   navy: [18, 18, 42],
@@ -172,12 +173,18 @@ function activityLabel(value) {
   return labelOf(NETWORK_ACTIVITY_WILLINGNESS, value);
 }
 
+/** "High" / "Medium" / "Low", or "" when no priority is set for that support. */
+function priorityLabel(person, key) {
+  const value = person?.priorities?.[key] || "";
+  return value ? labelOf(NETWORK_PRIORITY, value) : "";
+}
+
 export async function downloadNetworkPdf({ people = [], generatedBy = "" } = {}) {
   const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
   headerBar(
     doc,
     "Alumni network directory",
-    `${people.length} connected alumni · ${stampLong()}`,
+    `${people.length} connected alumni · ${stampLong()} · [High] / [Medium] / [Low] = priority to pursue for that support`,
     generatedBy
   );
 
@@ -208,7 +215,11 @@ export async function downloadNetworkPdf({ people = [], generatedBy = "" } = {})
       [p.jobRole, p.company, p.jobSector].filter(Boolean).join(" · ") || "—",
       p.referredByName || labelOf(NETWORK_ORIGIN_KINDS, p.originKind),
       labelOf(NETWORK_CONNECT_STATUS, p.connectStatus),
-      ...NETWORK_ACTIVITY_FIELDS.map((f) => activityLabel(p[f.key])),
+      ...NETWORK_ACTIVITY_FIELDS.map((f) => {
+        const prio = priorityLabel(p, f.key);
+        // Short tag so it fits the narrow column; the header note explains it.
+        return prio ? `${activityLabel(p[f.key])}\n[${prio}]` : activityLabel(p[f.key]);
+      }),
     ]),
     didParseCell: (data) => {
       if (data.section !== "body") return;
@@ -245,10 +256,16 @@ export async function downloadNetworkExcel({ people = [] } = {}) {
       "Referrer phone",
       "Response",
       ...NETWORK_ACTIVITY_FIELDS.map((f) => f.label),
+      ...NETWORK_ACTIVITY_FIELDS.map((f) => `${f.short} priority`),
       "Notes",
       "Remarks",
     ],
-    [6, 28, 28, 12, 14, 28, 24, 20, 18, 18, 24, 14, 14, ...NETWORK_ACTIVITY_FIELDS.map(() => 16), 36, 60],
+    [
+      6, 28, 28, 12, 14, 28, 24, 20, 18, 18, 24, 14, 14,
+      ...NETWORK_ACTIVITY_FIELDS.map(() => 16),
+      ...NETWORK_ACTIVITY_FIELDS.map(() => 14),
+      36, 60,
+    ],
     people.map((p, i) => [
       num(i + 1),
       txt(p.alumniName),
@@ -264,6 +281,7 @@ export async function downloadNetworkExcel({ people = [] } = {}) {
       txt(p.referredByPhone),
       txt(labelOf(NETWORK_CONNECT_STATUS, p.connectStatus)),
       ...NETWORK_ACTIVITY_FIELDS.map((f) => txt(activityLabel(p[f.key]))),
+      ...NETWORK_ACTIVITY_FIELDS.map((f) => txt(priorityLabel(p, f.key))),
       txt(p.notes),
       txt(remarksText(p)),
     ])
