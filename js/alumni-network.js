@@ -11,6 +11,7 @@ import {
   updateDoc,
 } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-firestore.js";
 import { withSession } from "./auth.js";
+import { openNetworkReport } from "./alumni-network-print.js?v=er39";
 import {
   ALUMNI_NETWORK_COLLECTION,
   ALUMNI_PROGRAMS_COLLECTION,
@@ -786,7 +787,8 @@ function connectTabHtml(state) {
     ${filtered.length > 200 ? `<p class="form-hint">Showing first 200. Narrow the filters to see the rest.</p>` : ""}`;
 }
 
-function directoryTabHtml(state) {
+/** Directory rows after the current filters and order, plus the brought-in index. */
+function orderedDirectoryRows(state) {
   const rows = filterNetworkPeople(state.people, state.dirFilters);
   const brought = broughtInIndex(state.people);
   const broughtCount = (p) => brought.get(p.id)?.length || 0;
@@ -805,6 +807,29 @@ function directoryTabHtml(state) {
         String(a.alumniName || "").localeCompare(String(b.alumniName || ""))
     );
   }
+  return { rows, brought };
+}
+
+/** Plain-language summary of the directory filters, for the report header. */
+function directoryFiltersText(filters = {}) {
+  const parts = [];
+  const activity = NETWORK_ACTIVITY_FIELDS.find((f) => f.key === filters.activityKey);
+  if (filters.search) parts.push(`search "${filters.search}"`);
+  if (filters.department) parts.push(deptLabel(filters.department));
+  if (filters.batch) parts.push(`passout ${filters.batch}`);
+  if (filters.connectStatus) parts.push(`response: ${optionLabel(NETWORK_CONNECT_STATUS, filters.connectStatus)}`);
+  if (filters.originKind) parts.push(`source: ${originLabel(filters.originKind)}`);
+  if (filters.jobSector) parts.push(filters.jobSector);
+  if (activity) parts.push(activity.label);
+  if (filters.activityValue) parts.push(optionLabel(NETWORK_ACTIVITY_WILLINGNESS, filters.activityValue));
+  const prio = { high: "High priority", medium_up: "High or medium priority", any: "Has a priority", none: "No priority set" }[filters.priority];
+  if (prio) parts.push(prio);
+  return parts.join(" · ");
+}
+
+function directoryTabHtml(state) {
+  const { rows, brought } = orderedDirectoryRows(state);
+  const broughtCount = (p) => brought.get(p.id)?.length || 0;
   const extra = `
         <div class="form-group">
           <label for="anDirStatus">Response</label>
@@ -868,11 +893,14 @@ function directoryTabHtml(state) {
       <p class="form-hint" style="margin:0;">
         People you are actively connecting after LEGECI. Colours show response and willingness for each support; ★ marks who to pursue first. Choose an Activity to filter and order by that support's priority.
       </p>
-      <button type="button" class="btn btn--primary btn--sm" data-an-add="manual">Add alumni</button>
+      <div class="an-dir-toolbar__actions">
+        <button type="button" class="btn btn--ghost btn--sm" data-an-print="filtered" title="Detailed report of the alumni shown below, ready to print or save as PDF">Print report</button>
+        <button type="button" class="btn btn--primary btn--sm" data-an-add="manual">Add alumni</button>
+      </div>
     </div>
     ${simpleFiltersHtml("anDir", state.dirFilters, extra)}
     <p class="ac-results-meta">${rows.length} of ${state.people.length} in the network</p>
-    <div class="table-scroll">
+    <div class="table-scroll table-scroll--frozen">
       <table class="data-table an-dir-table">
         <thead>
           <tr>
@@ -1043,6 +1071,7 @@ function reportsTabHtml(state) {
         </p>
       </div>
       <div class="er-report__actions">
+        <button type="button" class="btn btn--primary btn--sm" data-an-print="all" title="Summary, who to pursue first, connectors, programmes and a full profile of every alumni">Detailed report (print / PDF)</button>
         <button type="button" class="btn btn--primary btn--sm" data-an-report="network-pdf">Network PDF</button>
         <button type="button" class="btn btn--ghost btn--sm" data-an-report="network-xlsx">Network Excel</button>
         <button type="button" class="btn btn--primary btn--sm" data-an-report="programs-pdf">Programmes PDF</button>
@@ -1809,6 +1838,23 @@ export async function mountAdminAlumniNetwork(wrap, { session, notify } = {}) {
     });
     wrap.querySelectorAll("[data-an-report]").forEach((btn) => {
       btn.addEventListener("click", () => runReport(btn.dataset.anReport));
+    });
+    wrap.querySelectorAll("[data-an-print]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const filtered = btn.dataset.anPrint === "filtered";
+        if (filtered) readDirFilters();
+        const { rows, brought } = filtered
+          ? orderedDirectoryRows(state)
+          : orderedDirectoryRows({ ...state, dirFilters: {} });
+        const opened = openNetworkReport({
+          people: rows,
+          programs: state.programs,
+          brought,
+          filtersText: filtered ? directoryFiltersText(state.dirFilters) : "",
+          generatedBy: actorName(session),
+        });
+        if (!opened) toast("The browser blocked the report tab. Allow pop-ups for this site and try again.", "error");
+      });
     });
 
     document.getElementById("anPersonForm")?.addEventListener("submit", savePerson);

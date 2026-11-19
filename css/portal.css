@@ -1090,6 +1090,20 @@
   overflow-x: auto;
 }
 
+/* Long tables: scroll inside a box so the heading row stays visible */
+.table-scroll--frozen {
+  max-height: calc(100vh - 120px);
+  overflow: auto;
+  border-radius: 10px;
+}
+
+.table-scroll--frozen thead th {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  box-shadow: inset 0 -1px 0 var(--slate-200);
+}
+
 .password-prompt {
   background: #fff7ed;
   border: 1px solid #fdba74;
@@ -2892,6 +2906,12 @@
   flex-wrap: wrap;
 }
 
+.an-dir-toolbar__actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
 .an-row-actions {
   display: flex;
   flex-wrap: wrap;
@@ -3037,7 +3057,7 @@
 
 /* "Responded" / "Not contacted" need a little more room than the activity dropdowns */
 .an-dir-table .an-response-cell .table-status-select {
-  min-width: 8.4rem;
+  min-width: 9.4rem;
 }
 
 .ac-order {
@@ -3070,7 +3090,7 @@
 /* Alumni Network — remarks log */
 .an-remark-latest {
   margin-top: 0.4rem;
-  max-width: 16rem;
+  max-width: 13rem;
   padding: 0.2rem 0.5rem;
   border-left: 3px solid var(--gold-400);
   background: var(--gold-100);

@@ -53,7 +53,7 @@ import {
   statusBadgeHtml,
 } from "../js/alumni-connect.js?v=er2";
 import { mountAdminEventDesk } from "../js/event-registration.js?v=er33";
-import { mountAdminAlumniNetwork, loadNetworkPeople, networkPriorityLookup } from "../js/alumni-network.js?v=er37";
+import { mountAdminAlumniNetwork, loadNetworkPeople, networkPriorityLookup } from "../js/alumni-network.js?v=er39";
 import { loadLeaderboardPanel } from "../js/leaderboard.js";
 import { downloadAlumniContactsPdf } from "../js/alumni-contacts-pdf.js";
 import {
@@ -1297,7 +1297,7 @@ function renderAdminAlumniDashboard(regSettings) {
         </div>
         <p class="ac-results-meta" id="admAcMeta"></p>
         <div id="admAcFilteredStats"></div>
-        <div id="admAcTable" class="table-scroll" style="margin-top:1rem;"></div>
+        <div id="admAcTable" class="table-scroll table-scroll--frozen" style="margin-top:1rem;"></div>
       </div>
     </div>`;
 
